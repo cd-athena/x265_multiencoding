@@ -340,6 +340,11 @@ namespace X265_NS {
         H0("   --lowpass-dct                 Use low-pass subband dct approximation. Default %s\n", OPT(param->bLowPassDct));
         H0("   --[no-]frame-dup              Enable Frame duplication. Default %s\n", OPT(param->bEnableFrameDuplication));
         H0("   --dup-threshold <integer>     PSNR threshold for Frame duplication. Default %d\n", param->dupThreshold);
+        H0("   --mr-save <integer>           Choose the multirate save mode"); /* additional options for multi rate mode */
+        H0("   --mr-load <integer>           Choose the multirate load mode");
+        H0("   --mr-loadfile1 <filename>     Filename of first file from which multirate data is loaded");
+        H0("   --mr-loadfile2 <filename>     Filename of second file from which multirate data is loaded");
+        H0("   --mr-savefile <filename>      Filename of file where multirate data is saved");
 #ifdef SVT_HEVC
         H0("   --[no]svt                     Enable SVT HEVC encoder %s\n", OPT(param->bEnableSvtHevc));
         H0("   --[no-]svt-hme                Enable Hierarchial motion estimation(HME) in SVT HEVC encoder \n");

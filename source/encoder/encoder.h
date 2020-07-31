@@ -204,6 +204,12 @@ public:
     Frame*             m_exportedPic;
     FILE*              m_analysisFileIn;
     FILE*              m_analysisFileOut;
+
+    // additional analysis file for multi-rate
+    FILE*              m_mr_loadFile1;
+    FILE*              m_mr_loadFile2;
+    FILE*              m_mr_saveFile;
+
     FILE*              m_naluFile;
     x265_param*        m_param;
     x265_param*        m_latestParam;     // Holds latest param during a reconfigure
@@ -308,6 +314,10 @@ public:
     void create();
     void stopJobs();
     void destroy();
+
+    /* Multi-rate */
+    void readMultiRateFile(x265_multirate_data* refData, int curPoc);
+    void writeMultiRateFile(x265_multirate_data* refData, FrameData &curEncData);
 
     int encode(const x265_picture* pic, x265_picture *pic_out);
 

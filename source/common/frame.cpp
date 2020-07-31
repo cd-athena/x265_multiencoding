@@ -64,6 +64,10 @@ Frame::Frame()
     m_edgeBitPlane = NULL;
     m_edgeBitPic = NULL;
     m_isInsideWindow = 0;
+
+    /* Multi-rate */
+    m_multirateDataIn = NULL;
+    m_multirateDataOut = NULL;
 }
 
 bool Frame::create(x265_param *param, float* quantOffsets)
@@ -71,6 +75,16 @@ bool Frame::create(x265_param *param, float* quantOffsets)
     m_fencPic = new PicYuv;
     m_param = param;
     CHECKED_MALLOC_ZERO(m_rcData, RcStats, 1);
+
+    /* Multi-rate */
+    if (param->mr_load)
+    {
+        CHECKED_MALLOC(m_multirateDataIn, x265_multirate_data, 1);
+    }
+    if (param->mr_save)
+    {
+        CHECKED_MALLOC(m_multirateDataOut, x265_multirate_data, 1);
+    }
 
     if (param->bCTUInfo)
     {
@@ -289,4 +303,9 @@ void Frame::destroy()
         X265_FREE_ZERO(m_edgeBitPlane);
         m_edgeBitPic = NULL;
     }
+
+    /* Multi-rate */
+    X265_FREE(m_multirateDataIn);
+    X265_FREE(m_multirateDataOut);
+
 }

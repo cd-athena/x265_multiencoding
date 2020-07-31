@@ -80,6 +80,9 @@ Analysis::Analysis()
     m_checkMergeAndSkipOnly[0] = false;
     m_checkMergeAndSkipOnly[1] = false;
     m_evaluateInter = 0;
+
+    m_reuseInterDataCTU1 = NULL;
+    m_reuseInterDataCTU2 = NULL;
 }
 
 bool Analysis::create(ThreadLocalData *tld)
@@ -188,6 +191,56 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
         for (uint32_t i = 0; i < cuGeom.numPartitions; i++)
             ctu.m_log2CUSize[i] = (uint8_t)m_param->maxLog2CUSize - ctu.m_cuDepth[i];
     }
+
+    /* Multi-rate */
+    if (m_param->mr_load)
+    {
+        if (m_slice->m_sliceType != I_SLICE)
+        {
+            m_reuseInterDataCTU1 = (x265_analysis_inter_data*)m_frame->m_multirateDataIn->interData1;
+            m_reuseDepth1 = &m_reuseInterDataCTU1->depth[ctu.m_cuAddr * numPartition];
+            m_reuseModes1 = &m_reuseInterDataCTU1->modes[ctu.m_cuAddr * numPartition];
+            m_reusePartSize1 = &m_reuseInterDataCTU1->partSize[ctu.m_cuAddr * numPartition];
+            m_reuseMergeFlag1 = &m_reuseInterDataCTU1->mergeFlag[ctu.m_cuAddr * numPartition];
+            if (m_slice->m_sliceType == P_SLICE || m_param->bIntraInBFrames)
+            {
+                x265_analysis_intra_data* intraDataCTU1 = (x265_analysis_intra_data*)m_frame->m_multirateDataIn->intraData1;
+                memcpy(ctu.m_refLumaDir1, &intraDataCTU1->modes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
+                memcpy(ctu.m_refChromaDir1, &intraDataCTU1->chromaModes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
+            }
+            if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
+            {
+                m_reuseInterDataCTU2 = (x265_analysis_inter_data*)m_frame->m_multirateDataIn->interData2;
+                m_reuseDepth2 = &m_reuseInterDataCTU2->depth[ctu.m_cuAddr * ctu.m_numPartitions];
+                m_reuseModes2 = &m_reuseInterDataCTU2->modes[ctu.m_cuAddr * ctu.m_numPartitions];
+                m_reusePartSize2 = &m_reuseInterDataCTU2->partSize[ctu.m_cuAddr * ctu.m_numPartitions];
+                m_reuseMergeFlag2 = &m_reuseInterDataCTU2->mergeFlag[ctu.m_cuAddr * ctu.m_numPartitions];
+                if (m_slice->m_sliceType == P_SLICE || m_param->bIntraInBFrames)
+                {
+                    x265_analysis_intra_data* intraDataCTU2 = (x265_analysis_intra_data*)m_frame->m_multirateDataIn->intraData2;
+                    memcpy(ctu.m_refLumaDir2, &intraDataCTU2->modes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
+                    memcpy(ctu.m_refChromaDir2, &intraDataCTU2->chromaModes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
+                }
+            }
+        }
+        else
+        {
+            x265_analysis_intra_data* intraDataCTU1 = (x265_analysis_intra_data*)m_frame->m_multirateDataIn->intraData1;
+            memcpy(ctu.m_refDepth1, &intraDataCTU1->depth[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
+            memcpy(ctu.m_refLumaDir1, &intraDataCTU1->modes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
+            memcpy(ctu.m_refPartSize1, &intraDataCTU1->partSizes[ctu.m_cuAddr * numPartition], sizeof(char) * numPartition);
+            memcpy(ctu.m_refChromaDir1, &intraDataCTU1->chromaModes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
+            if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
+            {
+                x265_analysis_intra_data* intraDataCTU2 = (x265_analysis_intra_data*)m_frame->m_multirateDataIn->intraData2;
+                memcpy(ctu.m_refDepth2, &intraDataCTU2->depth[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
+                memcpy(ctu.m_refLumaDir2, &intraDataCTU2->modes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
+                memcpy(ctu.m_refPartSize2, &intraDataCTU2->partSizes[ctu.m_cuAddr * numPartition], sizeof(char) * numPartition);
+                memcpy(ctu.m_refChromaDir2, &intraDataCTU2->chromaModes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
+            }
+        }
+    }
+
     if (m_param->analysisMultiPassRefine && m_param->rc.bStatRead && (m_slice->m_sliceType != I_SLICE))
     {
         int numPredDir = m_slice->isInterP() ? 1 : 2;
@@ -522,6 +575,35 @@ uint64_t Analysis::compressIntraCU(const CUData& parentCTU, const CUGeom& cuGeom
 
     bool bAlreadyDecided = m_param->intraRefine != 4 && parentCTU.m_lumaIntraDir[cuGeom.absPartIdx] != (uint8_t)ALL_IDX && !(m_param->bAnalysisType == HEVC_INFO);
     bool bDecidedDepth = m_param->intraRefine != 4 && parentCTU.m_cuDepth[cuGeom.absPartIdx] == depth;
+
+    // stop recursion based on MR reference depth
+    if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_SINGLE_BOUND)
+    {
+        uint8_t refDepth = parentCTU.m_refDepth1[cuGeom.absPartIdx];
+        if (depth >= refDepth) // if depth is 0, we have to split (cf. below)
+        {
+            mightSplit = false;
+            mightNotSplit = true;
+            bDecidedDepth = true;
+        }
+    }
+    if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
+    {
+        uint8_t maxPossibleDepth = X265_MAX(parentCTU.m_refDepth1[cuGeom.absPartIdx], parentCTU.m_refDepth2[cuGeom.absPartIdx]);
+        uint8_t minPossibleDepth = X265_MIN(parentCTU.m_refDepth1[cuGeom.absPartIdx], parentCTU.m_refDepth2[cuGeom.absPartIdx]);
+        if (depth >= maxPossibleDepth)
+        {
+            mightSplit = false;
+            mightNotSplit = true;
+            bDecidedDepth = true;
+        }
+        else if (depth < minPossibleDepth)
+        {
+            mightSplit = true;
+            mightNotSplit = false;
+        }
+    }
+
     int split = 0;
     if (m_param->intraRefine && m_param->intraRefine != 4)
     {
@@ -872,6 +954,32 @@ uint32_t Analysis::compressInterCU_dist(const CUData& parentCTU, const CUGeom& c
 
     X265_CHECK(m_param->rdLevel >= 2, "compressInterCU_dist does not support RD 0 or 1\n");
 
+    // stop recursion based on MR reference depth
+    if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_SINGLE_BOUND)
+    {
+        uint8_t refDepth = m_reuseDepth1[cuGeom.absPartIdx];
+        if (depth >= minDepth && depth >= refDepth)
+        {
+            mightSplit = false;
+            mightNotSplit = true;
+        }
+    }
+    if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
+    {
+        uint8_t maxPossibleDepth = X265_MAX(m_reuseDepth1[cuGeom.absPartIdx], m_reuseDepth2[cuGeom.absPartIdx]);
+        uint8_t minPossibleDepth = X265_MIN(m_reuseDepth1[cuGeom.absPartIdx], m_reuseDepth2[cuGeom.absPartIdx]);
+        if (depth >= minDepth && depth >= maxPossibleDepth)
+        {
+            mightSplit = false;
+            mightNotSplit = true;
+        }
+        else if (depth < minPossibleDepth)
+        {
+            mightSplit = true;
+            mightNotSplit = false;
+        }
+    }
+
     PMODE pmode(*this, cuGeom);
 
     if (mightNotSplit && depth >= minDepth)
@@ -1169,8 +1277,9 @@ SplitData Analysis::compressInterCU_rd0_4(const CUData& parentCTU, const CUGeom&
     bool bHEVCBlockAnalysis = (m_param->bAnalysisType == AVC_INFO && cuGeom.numPartitions > 16);
     bool bRefineAVCAnalysis = (m_param->analysisLoadReuseLevel == 7 && (m_modeFlag[0] || m_modeFlag[1]));
     bool bNooffloading = !(m_param->bAnalysisType == AVC_INFO);
+    bool bMultirateLoad = !!(m_param->mr_load);
 
-    if (bHEVCBlockAnalysis || bRefineAVCAnalysis || bNooffloading)
+    if (bHEVCBlockAnalysis || bRefineAVCAnalysis || bNooffloading || bMultirateLoad)
     {
         md.bestMode = NULL;
         bool mightSplit = !(cuGeom.flags & CUGeom::LEAF);
@@ -1196,6 +1305,101 @@ SplitData Analysis::compressInterCU_rd0_4(const CUData& parentCTU, const CUGeom&
             }
             mightSplit &= false;
             minDepth = depth;
+        }
+
+        bool skipIntra = false;
+        // stop recursion based on MR reference depth
+        if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_SINGLE_BOUND)
+        {
+            uint8_t refDepth = m_reuseDepth1[cuGeom.absPartIdx];
+            if (depth >= minDepth && depth >= refDepth)
+            {
+                mightSplit = false;
+                mightNotSplit = true;
+                skipRecursion = true;
+            }
+            if (m_param->mr_load & MULTIRATE_REUSE_PREDICTION_MODES)
+            {
+                /* If recursion depth reaches that chosen for highest quality,
+                if SKIP mode was chosen for highest quality, force SKIP/MERGE */
+                if (depth == refDepth)
+                {
+                    if (m_reuseModes1[cuGeom.absPartIdx] == MODE_SKIP)
+                    {
+                        md.pred[PRED_MERGE].cu.initSubCU(parentCTU, cuGeom, qp);
+                        md.pred[PRED_SKIP].cu.initSubCU(parentCTU, cuGeom, qp);
+                        checkMerge2Nx2N_rd0_4(md.pred[PRED_SKIP], md.pred[PRED_MERGE], cuGeom);
+                        skipRecursion = true;
+                        skipModes = !!md.bestMode;
+                    }
+                    if (m_reusePartSize1[cuGeom.absPartIdx] == SIZE_2Nx2N && (m_reuseModes1[cuGeom.absPartIdx] != MODE_INTRA && m_reuseModes1[cuGeom.absPartIdx] != 4))
+                    {
+                        skipRectAmp = true && !!md.bestMode;
+                        chooseMerge = !!m_reuseMergeFlag1[cuGeom.absPartIdx] && !!md.bestMode;
+                    }
+                    if (m_reuseModes1[cuGeom.absPartIdx] == MODE_INTER)
+                    {
+                        skipIntra = true;
+                    }
+                }
+            }
+        }
+        if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
+        {
+            uint8_t maxPossibleDepth = X265_MAX(m_reuseDepth1[cuGeom.absPartIdx], m_reuseDepth2[cuGeom.absPartIdx]);
+            uint8_t minPossibleDepth = X265_MIN(m_reuseDepth1[cuGeom.absPartIdx], m_reuseDepth2[cuGeom.absPartIdx]);
+            if (depth >= minDepth && depth >= maxPossibleDepth)
+            {
+                mightSplit = false;
+                mightNotSplit = true;
+                skipRecursion = true;
+            }
+            else if (depth < minPossibleDepth)
+            {
+                mightSplit = true;
+                mightNotSplit = false;
+                skipRecursion = false;
+                skipModes = true;
+            }
+            if (m_param->mr_load & MULTIRATE_REUSE_PREDICTION_MODES)
+            {
+                if (depth == maxPossibleDepth)
+                {
+                    /* If same depth is chosen for highest quality and least quality encode,
+                    if SKIP mode was chosen in highest quality, force SKIP/MERGE */
+                    if (m_reuseModes1[cuGeom.absPartIdx] == MODE_SKIP)
+                    {
+                        md.pred[PRED_MERGE].cu.initSubCU(parentCTU, cuGeom, qp);
+                        md.pred[PRED_SKIP].cu.initSubCU(parentCTU, cuGeom, qp);
+                        checkMerge2Nx2N_rd0_4(md.pred[PRED_SKIP], md.pred[PRED_MERGE], cuGeom);
+                        skipModes = !!md.bestMode;
+                    }
+
+                    if (m_reusePartSize1[cuGeom.absPartIdx] == SIZE_2Nx2N && (m_reuseModes1[cuGeom.absPartIdx] != MODE_INTRA && m_reuseModes1[cuGeom.absPartIdx] != 4))
+                    {
+                        skipRectAmp = true && !!md.bestMode;
+                        chooseMerge = !!m_reuseMergeFlag1[cuGeom.absPartIdx] && !!md.bestMode;
+                    }
+                    /* If the highest quality encode PU and lowest quality encode PU are Intra coded,
+                    check for only MERGE, SKIP, INTRA modes */
+                    if ((m_reuseModes1[cuGeom.absPartIdx] == MODE_INTRA) && (m_reuseModes2[cuGeom.absPartIdx] == MODE_INTRA))
+                    {
+                        md.pred[PRED_MERGE].cu.initSubCU(parentCTU, cuGeom, qp);
+                        md.pred[PRED_SKIP].cu.initSubCU(parentCTU, cuGeom, qp);
+                        checkMerge2Nx2N_rd0_4(md.pred[PRED_SKIP], md.pred[PRED_MERGE], cuGeom);
+                        md.pred[PRED_INTRA].cu.initSubCU(parentCTU, cuGeom, qp);
+                        checkIntraInInter(md.pred[PRED_INTRA], cuGeom);
+                        encodeIntraInInter(md.pred[PRED_INTRA], cuGeom);
+                        checkBestMode(md.pred[PRED_INTRA], depth);
+                        skipModes = !!md.bestMode;
+                    }
+                    /* If highest quality encode PU is INTER coded, skip checking INTRA coding */
+                    if (m_reuseModes1[cuGeom.absPartIdx] == MODE_INTER)
+                    {
+                        skipIntra = true;
+                    }
+                }
+            }
         }
 
         if ((m_limitTU & X265_TU_LIMIT_NEIGH) && cuGeom.log2CUSize >= 4)
@@ -1592,7 +1796,7 @@ SplitData Analysis::compressInterCU_rd0_4(const CUData& parentCTU, const CUGeom&
                         }
                     }
                 }
-                bool bTryIntra = (m_slice->m_sliceType != B_SLICE || m_param->bIntraInBFrames) && cuGeom.log2CUSize != MAX_LOG2_CU_SIZE && !((m_param->bCTUInfo & 4) && bCtuInfoCheck);
+                bool bTryIntra = (m_slice->m_sliceType != B_SLICE || m_param->bIntraInBFrames) && cuGeom.log2CUSize != MAX_LOG2_CU_SIZE && !((m_param->bCTUInfo & 4) && bCtuInfoCheck && !skipIntra);
                 if (m_param->rdLevel >= 3)
                 {
                     /* Calculate RD cost of best inter option */
@@ -1871,8 +2075,9 @@ SplitData Analysis::compressInterCU_rd5_6(const CUData& parentCTU, const CUGeom&
     bool bHEVCBlockAnalysis = (m_param->bAnalysisType == AVC_INFO && cuGeom.numPartitions > 16);
     bool bRefineAVCAnalysis = (m_param->analysisLoadReuseLevel == 7 && (m_modeFlag[0] || m_modeFlag[1]));
     bool bNooffloading = !(m_param->bAnalysisType == AVC_INFO);
+    bool bMultirateLoad = !!(m_param->mr_load);
 
-    if (bHEVCBlockAnalysis || bRefineAVCAnalysis || bNooffloading)
+    if (bHEVCBlockAnalysis || bRefineAVCAnalysis || bNooffloading || bMultirateLoad)
     {
         bool mightSplit = !(cuGeom.flags & CUGeom::LEAF);
         bool mightNotSplit = !(cuGeom.flags & CUGeom::SPLIT_MANDATORY);
@@ -1883,6 +2088,7 @@ SplitData Analysis::compressInterCU_rd5_6(const CUData& parentCTU, const CUGeom&
         bool skipRectAmp = false;
         bool bCtuInfoCheck = false;
         int sameContentRef = 0;
+        bool skipIntra = false;
 
         if (m_evaluateInter)
         {
@@ -1914,6 +2120,112 @@ SplitData Analysis::compressInterCU_rd5_6(const CUData& parentCTU, const CUGeom&
         splitData[3].initSplitCUData();
         uint32_t allSplitRefs = splitData[0].splitRefs | splitData[1].splitRefs | splitData[2].splitRefs | splitData[3].splitRefs;
         uint32_t refMasks[2];
+
+        // stop recursion based on MR reference depth
+        if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_SINGLE_BOUND)
+        {
+            uint8_t refDepth = m_reuseDepth1[cuGeom.absPartIdx];
+            if (depth >= refDepth)
+            {
+                mightSplit = false;
+                mightNotSplit = true;
+                skipRecursion = true;
+            }
+            if (m_param->mr_load & MULTIRATE_REUSE_PREDICTION_MODES)
+            {
+                /* If recursion depth reaches that chosen for highest quality,
+                if SKIP mode was chosen for highest quality, force MERGE/SKIP */
+                if (depth == refDepth)
+                {
+                    if (m_reuseModes1[cuGeom.absPartIdx] == MODE_SKIP)
+                    {
+                        md.pred[PRED_SKIP].cu.initSubCU(parentCTU, cuGeom, qp);
+                        md.pred[PRED_MERGE].cu.initSubCU(parentCTU, cuGeom, qp);
+                        checkMerge2Nx2N_rd5_6(md.pred[PRED_SKIP], md.pred[PRED_MERGE], cuGeom);
+                        refMasks[0] = allSplitRefs;
+                        md.pred[PRED_2Nx2N].cu.initSubCU(parentCTU, cuGeom, qp);
+                        checkInter_rd5_6(md.pred[PRED_2Nx2N], cuGeom, SIZE_2Nx2N, refMasks);
+                        checkBestMode(md.pred[PRED_2Nx2N], cuGeom.depth);
+                        skipRecursion = true && !!md.bestMode;
+                        skipModes = true && !!md.bestMode;
+                    }
+                    if (m_reusePartSize1[cuGeom.absPartIdx] == SIZE_2Nx2N)
+                    {
+                        skipRectAmp = true;
+                    }
+                    if (m_reuseModes1[cuGeom.absPartIdx] == MODE_INTER)
+                    {
+                        skipIntra = true;
+                    }
+                }
+            }
+        }
+        if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
+        {
+            uint8_t maxPossibleDepth = X265_MAX(m_reuseDepth1[cuGeom.absPartIdx], m_reuseDepth2[cuGeom.absPartIdx]);
+            uint8_t minPossibleDepth = X265_MIN(m_reuseDepth1[cuGeom.absPartIdx], m_reuseDepth2[cuGeom.absPartIdx]);
+            if (depth >= maxPossibleDepth)
+            {
+                mightSplit = false;
+                mightNotSplit = true;
+                skipRecursion = true;
+            }
+            else if (depth < minPossibleDepth)
+            {
+                mightSplit = true;
+                mightNotSplit = false;
+                skipRecursion = false;
+                skipModes = true;
+            }
+            if (m_param->mr_load & MULTIRATE_REUSE_PREDICTION_MODES)
+            {
+                /* If same depth is chosen for highest quality and least quality encode,
+                if SKIP mode was chosen in highest quality, force SKIP/MERGE */
+                if (depth == maxPossibleDepth)
+                {
+                    if (m_reuseModes1[cuGeom.absPartIdx] == MODE_SKIP)
+                    {
+                        md.pred[PRED_SKIP].cu.initSubCU(parentCTU, cuGeom, qp);
+                        md.pred[PRED_MERGE].cu.initSubCU(parentCTU, cuGeom, qp);
+                        checkMerge2Nx2N_rd5_6(md.pred[PRED_SKIP], md.pred[PRED_MERGE], cuGeom);
+                        refMasks[0] = allSplitRefs;
+                        md.pred[PRED_2Nx2N].cu.initSubCU(parentCTU, cuGeom, qp);
+                        checkInter_rd5_6(md.pred[PRED_2Nx2N], cuGeom, SIZE_2Nx2N, refMasks);
+                        checkBestMode(md.pred[PRED_2Nx2N], cuGeom.depth);
+                        skipRecursion = true && !!md.bestMode;
+                        skipModes = true && !!md.bestMode;
+                    }
+                    if (m_reusePartSize1[cuGeom.absPartIdx] == SIZE_2Nx2N)
+                    {
+                        skipRectAmp = true;
+                    }
+                    /* If the highest quality encode PU and lowest quality encode PU are Intra coded,
+                    check for only MERGE, SKIP, INTRA modes */
+                    if ((m_reuseModes1[cuGeom.absPartIdx] == MODE_INTRA) && (m_reuseModes2[cuGeom.absPartIdx] == MODE_INTRA))
+                    {
+                        md.pred[PRED_SKIP].cu.initSubCU(parentCTU, cuGeom, qp);
+                        md.pred[PRED_MERGE].cu.initSubCU(parentCTU, cuGeom, qp);
+                        checkMerge2Nx2N_rd5_6(md.pred[PRED_SKIP], md.pred[PRED_MERGE], cuGeom);
+                        md.pred[PRED_INTRA].cu.initSubCU(parentCTU, cuGeom, qp);
+                        checkIntra(md.pred[PRED_INTRA], cuGeom, SIZE_2Nx2N);
+                        checkBestMode(md.pred[PRED_INTRA], depth);
+                        if (cuGeom.log2CUSize == 3 && m_slice->m_sps->quadtreeTULog2MinSize < 3)
+                        {
+                            md.pred[PRED_INTRA_NxN].cu.initSubCU(parentCTU, cuGeom, qp);
+                            checkIntra(md.pred[PRED_INTRA_NxN], cuGeom, SIZE_NxN);
+                            checkBestMode(md.pred[PRED_INTRA_NxN], depth);
+                        }
+                        skipModes = !!md.bestMode;
+                    }
+                    /* If highest quality encode PU is INTER coded, skip checking INTRA coding */
+                    if (m_reuseModes1[cuGeom.absPartIdx] == MODE_INTER)
+                    {
+                        skipIntra = true;
+                    }
+                }
+            }
+        }
+
         if (m_param->bCTUInfo && depth <= parentCTU.m_cuDepth[cuGeom.absPartIdx])
         {
             if (bDecidedDepth && m_additionalCtuInfo[cuGeom.absPartIdx])
@@ -2285,7 +2597,7 @@ SplitData Analysis::compressInterCU_rd5_6(const CUData& parentCTU, const CUGeom&
                     }
                 }
 
-                if ((m_slice->m_sliceType != B_SLICE || m_param->bIntraInBFrames) && (cuGeom.log2CUSize != MAX_LOG2_CU_SIZE) && !((m_param->bCTUInfo & 4) && bCtuInfoCheck))
+                if ((m_slice->m_sliceType != B_SLICE || m_param->bIntraInBFrames) && (cuGeom.log2CUSize != MAX_LOG2_CU_SIZE) && !((m_param->bCTUInfo & 4) && bCtuInfoCheck) && !skipIntra)
                 {
                     if (!m_param->limitReferences || splitIntra)
                     {

@@ -143,6 +143,10 @@ public:
 
     int                    m_isInsideWindow;
 
+    /* Multi-rate */
+    x265_multirate_data*   m_multirateDataIn;
+    x265_multirate_data*   m_multirateDataOut;
+
     Frame();
 
     bool create(x265_param *param, float* quantOffsets);

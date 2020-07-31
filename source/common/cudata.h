@@ -207,7 +207,19 @@ public:
     uint8_t*      m_transformSkip[3]; // array of transform skipping flags per plane
     uint8_t*      m_cbf[3];           // array of coded block flags (CBF) per plane
     uint8_t*      m_chromaIntraDir;   // array of intra directions (chroma)
-    enum { BytesPerPartition = 24 };  // combined sizeof() of all per-part data
+
+    /* arrays for multi-rate data */
+    uint8_t*      m_refDepth1;
+    uint8_t*      m_refLumaDir1;
+    uint8_t*      m_refPartSize1;
+    uint8_t*      m_refChromaDir1;
+    uint8_t*      m_refDepth2;
+    uint8_t*      m_refLumaDir2;
+    uint8_t*      m_refPartSize2;
+    uint8_t*      m_refChromaDir2;
+
+    /* grown to 32 because of 8 new arrays of multi-rate data */
+    enum { BytesPerPartition = 32 };  // combined sizeof() of all per-part data
 
     sse_t*        m_distortion;
     coeff_t*      m_trCoeff[3];       // transformed coefficient buffer per plane

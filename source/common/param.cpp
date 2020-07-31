@@ -367,6 +367,13 @@ void x265_param_default(x265_param* param)
     param->bEnableSvtHevc = 0;
     param->svtHevcParam = NULL;
 
+    /* Multi-rate */
+    param->mr_load = 0;
+    param->mr_save = 0;
+    param->mr_save_filename = NULL;
+    param->mr_load_filename1 = NULL;
+    param->mr_load_filename2 = NULL;
+
 #ifdef SVT_HEVC
     param->svtHevcParam = svtParam;
     svt_param_default(param);
@@ -1197,6 +1204,11 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
     if (bExtraParams)
     {
         if (0) ;
+        OPT("mr-load") p->mr_load = atoi(value);
+        OPT("mr-save") p->mr_save = atoi(value);
+        OPT("mr-loadfile1") p->mr_load_filename1 = strdup(value);
+        OPT("mr-loadfile2") p->mr_load_filename2 = strdup(value);
+        OPT("mr-savefile") p->mr_save_filename = strdup(value);
         OPT("csv") p->csvfn = strdup(value);
         OPT("csv-log-level") p->csvLogLevel = atoi(value);
         OPT("qpmin") p->rc.qpMin = atoi(value);
@@ -1913,7 +1925,22 @@ void x265_print_params(x265_param* param)
             x265_log(param, X265_LOG_INFO, "VBV/HRD buffer / max-rate / init    : %d / %d / %.3f\n",
             param->rc.vbvBufferSize, param->rc.vbvMaxBitrate, param->rc.vbvBufferInit);
     }
-    
+
+    /* Multi-rate */
+    if (param->mr_save || param->mr_load)
+    {
+        x265_log(param, X265_LOG_INFO, "Multi-rate: Save mode: %d, Load mode: %d\n",
+            param->mr_save, param->mr_load);
+        if (param->mr_save)
+            x265_log(param, X265_LOG_INFO, "Multi-rate: Save file: %s\n", param->mr_save_filename);
+        if (param->mr_load)
+        {
+            x265_log(param, X265_LOG_INFO, "Multi-rate: Load file1: %s\n", param->mr_load_filename1);
+            if (param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
+                x265_log(param, X265_LOG_INFO, "Multi-rate: Load file2: %s\n", param->mr_load_filename2);
+        }
+    }
+
     char buf[80] = { 0 };
     char tmp[40];
 #define TOOLOPT(FLAG, STR) if (FLAG) appendtool(param, buf, sizeof(buf), STR);
@@ -2561,6 +2588,17 @@ void x265_copy_params(x265_param* dst, x265_param* src)
     else dst->analysisSave = NULL;
     if (src->analysisLoad) dst->analysisLoad=strdup(src->analysisLoad);
     else dst->analysisLoad = NULL;
+
+    /* Multi-rate */
+    dst->mr_save = src->mr_save;
+    dst->mr_load = src->mr_load;
+    if (src->mr_save_filename) dst->mr_save_filename = strdup(src->mr_save_filename);
+    else dst->mr_save_filename = NULL;
+    if (src->mr_load_filename1) dst->mr_load_filename1 = strdup(src->mr_load_filename1);
+    else dst->mr_load_filename1 = NULL;
+    if (src->mr_load_filename2) dst->mr_load_filename2 = strdup(src->mr_load_filename2);
+    else dst->mr_load_filename2 = NULL;
+
     dst->gopLookahead = src->gopLookahead;
     dst->radl = src->radl;
     dst->selectiveSAO = src->selectiveSAO;

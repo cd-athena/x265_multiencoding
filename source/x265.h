@@ -207,6 +207,29 @@ typedef struct x265_analysis_distortion_data
 #define EDGE_BINS 2
 #define MAX_HIST_BINS 1024
 
+/* Stores all multi-rate data for a single frame */
+typedef struct x265_multirate_data
+{
+    uint32_t               frameRecordSize;
+    uint32_t               poc;
+    uint32_t               sliceType;
+    uint32_t               numCUsInFrame;
+    uint32_t               numPartitions;
+    void*                  interData1;
+    void*                  interData2;
+    void*                  intraData1;
+    void*                  intraData2;
+    void*                  wt;
+} x265_multirate_data;
+
+typedef enum
+{
+    MULTIRATE_REUSE_LOOKAHEAD = 1,
+    MULTIRATE_RESTRICT_CU_TREE_SINGLE_BOUND = 2,
+    MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND = 4,
+    MULTIRATE_REUSE_PREDICTION_MODES = 8,
+} MultirateLoadType;
+
 /* Stores all analysis data for a single frame */
 typedef struct x265_analysis_data
 {
@@ -752,6 +775,13 @@ static const x265_vmaf_commondata vcd[] = { { NULL, (char *)"/usr/local/share/mo
  * x265_param as an opaque data structure */
 typedef struct x265_param
 {
+    /*== Multi-rate encoding ==*/
+    int mr_load;
+    int mr_save;
+    const char* mr_save_filename;
+    const char* mr_load_filename1;
+    const char* mr_load_filename2;
+
     /* x265_param_default() will auto-detect this cpu capability bitmap.  it is
      * recommended to not change this value unless you know the cpu detection is
      * somehow flawed on your target hardware. The asm function tables are
@@ -2045,6 +2075,10 @@ void x265_alloc_analysis_data(x265_param *param, x265_analysis_data* analysis);
 /*
 *    Free the allocated memory for x265_analysis_data object's internal structures. */
 void x265_free_analysis_data(x265_param *param, x265_analysis_data* analysis);
+
+/* multi-rate */
+void x265_alloc_multirate_data(x265_param *param, x265_multirate_data* refData);
+void x265_free_multirate_data(x265_param *param, x265_multirate_data* refData);
 
 /* Force a link error in the case of linking against an incompatible API version.
  * Glue #defines exist to force correct macro expansion; the final output of the macro
