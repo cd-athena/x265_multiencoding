@@ -507,13 +507,16 @@ void FrameEncoder::compressFrame()
     if (m_param->analysisLoad && (bUseWeightP || bUseWeightB))
         reuseWP = (WeightParam*)m_frame->m_analysisData.wt;
 
+    if ((m_param->mr_load & MULTIRATE_REUSE_LOOKAHEAD) && (bUseWeightP || bUseWeightB))
+        reuseWP = (WeightParam*)m_frame->m_multirateDataIn1->wt;
+
     if (bUseWeightP || bUseWeightB)
     {
 #if DETAILED_CU_STATS
         m_cuStats.countWeightAnalyze++;
         ScopedElapsedTime time(m_cuStats.weightAnalyzeTime);
 #endif
-        if (m_param->analysisLoad)
+        if (m_param->analysisLoad || (m_param->mr_load & MULTIRATE_REUSE_LOOKAHEAD))
         {
             for (int list = 0; list < slice->isInterB() + 1; list++) 
             {
@@ -540,6 +543,10 @@ void FrameEncoder::compressFrame()
 
     if (m_param->analysisSave && (bUseWeightP || bUseWeightB))
         reuseWP = (WeightParam*)m_frame->m_analysisData.wt;
+
+    if (m_param->mr_save && (bUseWeightP || bUseWeightB))
+        reuseWP = (WeightParam*)m_frame->m_multirateDataOut->wt;
+
     // Generate motion references
     int numPredDir = slice->isInterP() ? 1 : slice->isInterB() ? 2 : 0;
     for (int l = 0; l < numPredDir; l++)
@@ -552,7 +559,7 @@ void FrameEncoder::compressFrame()
             slice->m_refReconPicList[l][ref] = slice->m_refFrameList[l][ref]->m_reconPic;
             m_mref[l][ref].init(slice->m_refReconPicList[l][ref], w, *m_param);
         }
-        if (m_param->analysisSave && (bUseWeightP || bUseWeightB))
+        if ((m_param->analysisSave || m_param->mr_save) && (bUseWeightP || bUseWeightB))
         {
             for (int i = 0; i < (m_param->internalCsp != X265_CSP_I400 ? 3 : 1); i++)
                 *(reuseWP++) = slice->m_weightPredTable[l][0][i];

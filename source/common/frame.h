@@ -144,8 +144,9 @@ public:
     int                    m_isInsideWindow;
 
     /* Multi-rate */
-    x265_multirate_data*   m_multirateDataIn;
-    x265_multirate_data*   m_multirateDataOut;
+    x265_analysis_data*    m_multirateDataIn1;
+    x265_analysis_data*    m_multirateDataIn2;
+    x265_analysis_data*    m_multirateDataOut;
 
     Frame();
 

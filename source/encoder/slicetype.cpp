@@ -1138,7 +1138,7 @@ void Lookahead::destroy()
 /* Called by API thread */
 void Lookahead::addPicture(Frame& curFrame, int sliceType)
 {
-    if (m_param->analysisLoad && m_param->bDisableLookahead)
+    if ((m_param->analysisLoad && m_param->bDisableLookahead) || (m_param->mr_load & MULTIRATE_REUSE_LOOKAHEAD))
     {
         if (!m_filled)
             m_filled = true;
@@ -1239,7 +1239,7 @@ Frame* Lookahead::getDecidedPicture()
             return out;
         }
 
-        if (m_param->analysisLoad && m_param->bDisableLookahead)
+        if ((m_param->analysisLoad && m_param->bDisableLookahead) || (m_param->mr_load & MULTIRATE_REUSE_LOOKAHEAD))
             return NULL;
 
         findJob(-1); /* run slicetypeDecide() if necessary */

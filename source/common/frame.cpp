@@ -66,7 +66,8 @@ Frame::Frame()
     m_isInsideWindow = 0;
 
     /* Multi-rate */
-    m_multirateDataIn = NULL;
+    m_multirateDataIn1 = NULL;
+    m_multirateDataIn2 = NULL;
     m_multirateDataOut = NULL;
 }
 
@@ -79,13 +80,13 @@ bool Frame::create(x265_param *param, float* quantOffsets)
     /* Multi-rate */
     if (param->mr_load)
     {
-        CHECKED_MALLOC(m_multirateDataIn, x265_multirate_data, 1);
+        CHECKED_MALLOC(m_multirateDataIn1, x265_analysis_data, 1);
+        CHECKED_MALLOC(m_multirateDataIn2, x265_analysis_data, 1);
     }
     if (param->mr_save)
     {
-        CHECKED_MALLOC(m_multirateDataOut, x265_multirate_data, 1);
+        CHECKED_MALLOC(m_multirateDataOut, x265_analysis_data, 1);
     }
-
     if (param->bCTUInfo)
     {
         uint32_t widthInCTU = (m_param->sourceWidth + param->maxCUSize - 1) >> m_param->maxLog2CUSize;
@@ -305,7 +306,8 @@ void Frame::destroy()
     }
 
     /* Multi-rate */
-    X265_FREE(m_multirateDataIn);
+    X265_FREE(m_multirateDataIn1);
+    X265_FREE(m_multirateDataIn2);
     X265_FREE(m_multirateDataOut);
 
 }

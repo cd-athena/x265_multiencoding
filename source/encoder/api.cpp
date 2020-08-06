@@ -763,174 +763,113 @@ int x265_set_analysis_data(x265_encoder *enc, x265_analysis_data *analysis_data,
     return -1;
 }
 
-void x265_alloc_multirate_data(x265_param *param, x265_multirate_data* refData)
+void x265_alloc_multirate_data(x265_param *param, x265_analysis_data* analysis)
 {
-    X265_CHECK(refData->sliceType, "invalid slice type\n");
-    refData->intraData1 = refData->intraData2 = NULL;
-    refData->interData1 = refData->interData2 = NULL;
+    x265_analysis_inter_data *interData = analysis->interData = NULL;
+    x265_analysis_intra_data *intraData = analysis->intraData = NULL;
+    bool isVbv = param->rc.vbvMaxBitrate > 0 && param->rc.vbvBufferSize > 0;
+    int numDir = 2;
+    uint32_t numPlanes = param->internalCsp == X265_CSP_I400 ? 1 : 3;
 
-    if (refData->sliceType == X265_TYPE_IDR || refData->sliceType == X265_TYPE_I)
+    if (isVbv)
     {
-        x265_analysis_intra_data *intraData1 = (x265_analysis_intra_data*)refData->intraData1;
-        CHECKED_MALLOC_ZERO(intraData1, x265_analysis_intra_data, 1);
-        CHECKED_MALLOC(intraData1->depth, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-        CHECKED_MALLOC(intraData1->modes, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-        CHECKED_MALLOC(intraData1->partSizes, char, refData->numPartitions * refData->numCUsInFrame);
-        CHECKED_MALLOC(intraData1->chromaModes, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-        refData->intraData1 = intraData1;
-    }
-    else
-    {
-        int numDir = refData->sliceType == X265_TYPE_P ? 1 : 2;
-        uint32_t numPlanes = param->internalCsp == X265_CSP_I400 ? 1 : 3;
-        CHECKED_MALLOC_ZERO(refData->wt, WeightParam, numPlanes * numDir);
-        x265_analysis_inter_data *interData1 = (x265_analysis_inter_data*)refData->interData1;
-        CHECKED_MALLOC_ZERO(interData1, x265_analysis_inter_data, 1);
-        CHECKED_MALLOC(interData1->depth, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-        CHECKED_MALLOC(interData1->modes, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-        CHECKED_MALLOC(interData1->partSize, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-        CHECKED_MALLOC(interData1->mergeFlag, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-        CHECKED_MALLOC(interData1->interDir, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-        CHECKED_MALLOC_ZERO(interData1->mvpIdx[0], uint8_t, refData->numPartitions * refData->numCUsInFrame);
-        CHECKED_MALLOC_ZERO(interData1->mvpIdx[1], uint8_t, refData->numPartitions * refData->numCUsInFrame);
-        CHECKED_MALLOC_ZERO(interData1->mv[0], x265_analysis_MV, refData->numPartitions * refData->numCUsInFrame);
-        CHECKED_MALLOC_ZERO(interData1->mv[1], x265_analysis_MV, refData->numPartitions * refData->numCUsInFrame);
-        for (int dir = 0; dir < numDir; dir++)
-        {
-            CHECKED_MALLOC(interData1->refIdx[dir], int8_t, refData->numPartitions * refData->numCUsInFrame);
-        }
-        /* Allocate intra in inter */
-        if (refData->sliceType == X265_TYPE_P || param->bIntraInBFrames)
-        {
-            x265_analysis_intra_data *intraData1 = (x265_analysis_intra_data*)refData->intraData1;
-            CHECKED_MALLOC_ZERO(intraData1, x265_analysis_intra_data, 1);
-            CHECKED_MALLOC(intraData1->modes, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-            CHECKED_MALLOC(intraData1->chromaModes, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-            refData->intraData1 = intraData1;
-        }
-        refData->interData1 = interData1;
+        CHECKED_MALLOC_ZERO(analysis->lookahead.intraSatdForVbv, uint32_t, analysis->numCuInHeight);
+        CHECKED_MALLOC_ZERO(analysis->lookahead.satdForVbv, uint32_t, analysis->numCuInHeight);
+        CHECKED_MALLOC_ZERO(analysis->lookahead.intraVbvCost, uint32_t, analysis->numCUsInFrame);
+        CHECKED_MALLOC_ZERO(analysis->lookahead.vbvCost, uint32_t, analysis->numCUsInFrame);
     }
 
-    if (param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
+    //Allocate memory for weightParam pointer
+    CHECKED_MALLOC_ZERO(analysis->wt, x265_weight_param, numPlanes * numDir);
+    //Allocate memory for intraData pointer
+    CHECKED_MALLOC_ZERO(intraData, x265_analysis_intra_data, 1);
+    CHECKED_MALLOC(intraData->depth, uint8_t, analysis->numPartitions * analysis->numCUsInFrame);
+    CHECKED_MALLOC_ZERO(intraData->modes, uint8_t, analysis->numPartitions * analysis->numCUsInFrame);
+    CHECKED_MALLOC_ZERO(intraData->partSizes, char, analysis->numPartitions * analysis->numCUsInFrame);
+    CHECKED_MALLOC_ZERO(intraData->chromaModes, uint8_t, analysis->numPartitions * analysis->numCUsInFrame);
+    if (param->rc.cuTree)
+        CHECKED_MALLOC_ZERO(intraData->cuQPOff, int8_t, analysis->numPartitions * analysis->numCUsInFrame);
+    analysis->intraData = intraData;
+
+    //Allocate memory for interData pointer based on ReuseLevels
+    CHECKED_MALLOC_ZERO(interData, x265_analysis_inter_data, 1);
+    CHECKED_MALLOC(interData->depth, uint8_t, analysis->numPartitions * analysis->numCUsInFrame);
+    CHECKED_MALLOC_ZERO(interData->modes, uint8_t, analysis->numPartitions * analysis->numCUsInFrame);
+    if (param->rc.cuTree)
+        CHECKED_MALLOC_ZERO(interData->cuQPOff, int8_t, analysis->numPartitions * analysis->numCUsInFrame);
+    CHECKED_MALLOC_ZERO(interData->mvpIdx[0], uint8_t, analysis->numPartitions * analysis->numCUsInFrame);
+    CHECKED_MALLOC_ZERO(interData->mvpIdx[1], uint8_t, analysis->numPartitions * analysis->numCUsInFrame);
+    CHECKED_MALLOC_ZERO(interData->mv[0], x265_analysis_MV, analysis->numPartitions * analysis->numCUsInFrame);
+    CHECKED_MALLOC_ZERO(interData->mv[1], x265_analysis_MV, analysis->numPartitions * analysis->numCUsInFrame);
+    CHECKED_MALLOC_ZERO(interData->partSize, uint8_t, analysis->numPartitions * analysis->numCUsInFrame);
+    CHECKED_MALLOC_ZERO(interData->mergeFlag, uint8_t, analysis->numPartitions * analysis->numCUsInFrame);
+    CHECKED_MALLOC_ZERO(interData->interDir, uint8_t, analysis->numPartitions * analysis->numCUsInFrame);
+    CHECKED_MALLOC_ZERO(interData->sadCost, int64_t, analysis->numPartitions * analysis->numCUsInFrame);
+    for (int dir = 0; dir < numDir; dir++)
     {
-        if (refData->sliceType == X265_TYPE_IDR || refData->sliceType == X265_TYPE_I)
-        {
-            x265_analysis_intra_data *intraData2 = (x265_analysis_intra_data*)refData->intraData2;
-            CHECKED_MALLOC_ZERO(intraData2, x265_analysis_intra_data, 1);
-            CHECKED_MALLOC(intraData2->depth, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-            CHECKED_MALLOC(intraData2->modes, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-            CHECKED_MALLOC(intraData2->partSizes, char, refData->numPartitions * refData->numCUsInFrame);
-            CHECKED_MALLOC(intraData2->chromaModes, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-            refData->intraData2 = intraData2;
-        }
-        else
-        {
-            int numDir = refData->sliceType == X265_TYPE_P ? 1 : 2;
-            x265_analysis_inter_data *interData2 = (x265_analysis_inter_data*)refData->interData2;
-            CHECKED_MALLOC_ZERO(interData2, x265_analysis_inter_data, 1);
-            CHECKED_MALLOC(interData2->depth, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-            CHECKED_MALLOC(interData2->modes, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-            CHECKED_MALLOC(interData2->partSize, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-            CHECKED_MALLOC(interData2->mergeFlag, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-            CHECKED_MALLOC(interData2->interDir, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-            CHECKED_MALLOC_ZERO(interData2->mvpIdx[0], uint8_t, refData->numPartitions * refData->numCUsInFrame);
-            CHECKED_MALLOC_ZERO(interData2->mvpIdx[1], uint8_t, refData->numPartitions * refData->numCUsInFrame);
-            CHECKED_MALLOC_ZERO(interData2->mv[0], x265_analysis_MV, refData->numPartitions * refData->numCUsInFrame);
-            CHECKED_MALLOC_ZERO(interData2->mv[1], x265_analysis_MV, refData->numPartitions * refData->numCUsInFrame);
-            for (int dir = 0; dir < numDir; dir++)
-            {
-                CHECKED_MALLOC(interData2->refIdx[dir], int8_t, refData->numPartitions * refData->numCUsInFrame);
-            }
-            /* Allocate intra in inter */
-            if (refData->sliceType == X265_TYPE_P || param->bIntraInBFrames)
-            {
-                x265_analysis_intra_data *intraData2 = (x265_analysis_intra_data*)refData->intraData1;
-                CHECKED_MALLOC_ZERO(intraData2, x265_analysis_intra_data, 1);
-                CHECKED_MALLOC(intraData2->modes, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-                CHECKED_MALLOC(intraData2->chromaModes, uint8_t, refData->numPartitions * refData->numCUsInFrame);
-                refData->intraData2 = intraData2;
-            }
-            refData->interData2 = interData2;
-        }
+        CHECKED_MALLOC_ZERO(interData->refIdx[dir], int8_t, analysis->numPartitions * analysis->numCUsInFrame);
+        CHECKED_MALLOC_ZERO(analysis->modeFlag[dir], uint8_t, analysis->numPartitions * analysis->numCUsInFrame);
     }
+    CHECKED_MALLOC_ZERO(interData->ref, int32_t, analysis->numCUsInFrame * X265_MAX_PRED_MODE_PER_CTU * numDir);
+    analysis->interData = interData;
     return;
-
 fail:
-    x265_free_multirate_data(param, refData);
+    x265_free_multirate_data(param, analysis);
 }
 
-void x265_free_multirate_data(x265_param *param, x265_multirate_data* refData)
+void x265_free_multirate_data(x265_param *param, x265_analysis_data* analysis)
 {
-    if (refData->sliceType > X265_TYPE_I && refData->wt)
-        X265_FREE(refData->wt);
-    if (refData->intraData1)
+    bool isVbv = param->rc.vbvMaxBitrate > 0 && param->rc.vbvBufferSize > 0;
+    //Free memory for Lookahead pointers
+    if (isVbv)
     {
-        X265_FREE(((x265_analysis_intra_data*)refData->intraData1)->depth);
-        X265_FREE(((x265_analysis_intra_data*)refData->intraData1)->modes);
-        X265_FREE(((x265_analysis_intra_data*)refData->intraData1)->partSizes);
-        X265_FREE(((x265_analysis_intra_data*)refData->intraData1)->chromaModes);
-        X265_FREE(refData->intraData1);
+        X265_FREE(analysis->lookahead.satdForVbv);
+        X265_FREE(analysis->lookahead.intraSatdForVbv);
+        X265_FREE(analysis->lookahead.vbvCost);
+        X265_FREE(analysis->lookahead.intraVbvCost);
     }
-    else if (refData->interData1)
+    if (analysis->wt)
+        X265_FREE(analysis->wt);
+    //Free memory for intraData pointers
+    if (analysis->intraData)
     {
-        X265_FREE(((x265_analysis_inter_data*)refData->interData1)->depth);
-        X265_FREE(((x265_analysis_inter_data*)refData->interData1)->modes);
-        X265_FREE(((x265_analysis_inter_data*)refData->interData1)->mergeFlag);
-        X265_FREE(((x265_analysis_inter_data*)refData->interData1)->partSize);
-        X265_FREE(((x265_analysis_inter_data*)refData->interData1)->interDir);
-        int numDir = refData->sliceType == X265_TYPE_P ? 1 : 2;
-        X265_FREE(((x265_analysis_inter_data*)refData->interData1)->mvpIdx[0]);
-        X265_FREE(((x265_analysis_inter_data*)refData->interData1)->mvpIdx[1]);
-        X265_FREE(((x265_analysis_inter_data*)refData->interData1)->mv[0]);
-        X265_FREE(((x265_analysis_inter_data*)refData->interData1)->mv[1]);
+        X265_FREE((analysis->intraData)->depth);
+        X265_FREE((analysis->intraData)->modes);
+        X265_FREE((analysis->intraData)->partSizes);
+        X265_FREE((analysis->intraData)->chromaModes);
+        if (param->rc.cuTree)
+            X265_FREE((analysis->intraData)->cuQPOff);
+        X265_FREE(analysis->intraData);
+        analysis->intraData = NULL;
+    }
+    //Free interData pointers
+    if (analysis->interData)
+    {
+        X265_FREE((analysis->interData)->depth);
+        X265_FREE((analysis->interData)->modes);
+        if (param->rc.cuTree)
+            X265_FREE((analysis->interData)->cuQPOff);
+        X265_FREE((analysis->interData)->mvpIdx[0]);
+        X265_FREE((analysis->interData)->mvpIdx[1]);
+        X265_FREE((analysis->interData)->mv[0]);
+        X265_FREE((analysis->interData)->mv[1]);
+        X265_FREE((analysis->interData)->mergeFlag);
+        X265_FREE((analysis->interData)->partSize);
+        int numDir = 2;
+        X265_FREE((analysis->interData)->interDir);
+        X265_FREE((analysis->interData)->sadCost);
         for (int dir = 0; dir < numDir; dir++)
         {
-            X265_FREE(((x265_analysis_inter_data*)refData->interData1)->refIdx[dir]);
-        }
-
-        if (refData->sliceType == P_SLICE || param->bIntraInBFrames)
-        {
-            X265_FREE(((x265_analysis_intra_data*)refData->intraData1)->modes);
-            X265_FREE(((x265_analysis_intra_data*)refData->intraData1)->chromaModes);
-            X265_FREE(refData->intraData1);
-        }
-        X265_FREE(refData->interData1);
-    }
-
-    if (param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
-    {
-        if (refData->intraData2)
-        {
-            X265_FREE(((x265_analysis_intra_data*)refData->intraData2)->depth);
-            X265_FREE(((x265_analysis_intra_data*)refData->intraData2)->modes);
-            X265_FREE(((x265_analysis_intra_data*)refData->intraData2)->partSizes);
-            X265_FREE(((x265_analysis_intra_data*)refData->intraData2)->chromaModes);
-            X265_FREE(refData->intraData2);
-        }
-        else if (refData->interData2)
-        {
-            X265_FREE(((x265_analysis_inter_data*)refData->interData2)->depth);
-            X265_FREE(((x265_analysis_inter_data*)refData->interData2)->modes);
-            X265_FREE(((x265_analysis_inter_data*)refData->interData2)->mergeFlag);
-            X265_FREE(((x265_analysis_inter_data*)refData->interData2)->partSize);
-            X265_FREE(((x265_analysis_inter_data*)refData->interData2)->interDir);
-            int numDir = refData->sliceType == X265_TYPE_P ? 1 : 2;
-            X265_FREE(((x265_analysis_inter_data*)refData->interData2)->mvpIdx[0]);
-            X265_FREE(((x265_analysis_inter_data*)refData->interData2)->mvpIdx[1]);
-            X265_FREE(((x265_analysis_inter_data*)refData->interData2)->mv[0]);
-            X265_FREE(((x265_analysis_inter_data*)refData->interData2)->mv[1]);
-            for (int dir = 0; dir < numDir; dir++)
+            X265_FREE((analysis->interData)->refIdx[dir]);
+            if (analysis->modeFlag[dir] != NULL)
             {
-                X265_FREE(((x265_analysis_inter_data*)refData->interData2)->refIdx[dir]);
+                X265_FREE(analysis->modeFlag[dir]);
+                analysis->modeFlag[dir] = NULL;
             }
-            if (refData->sliceType == P_SLICE || param->bIntraInBFrames)
-            {
-                X265_FREE(((x265_analysis_intra_data*)refData->intraData2)->modes);
-                X265_FREE(((x265_analysis_intra_data*)refData->intraData2)->chromaModes);
-                X265_FREE(refData->intraData2);
-            }
-            X265_FREE(refData->interData2);
         }
+        X265_FREE((analysis->interData)->ref);
+        X265_FREE(analysis->interData);
+        analysis->interData = NULL;
     }
 }
 

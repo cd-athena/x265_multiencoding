@@ -1971,7 +1971,28 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
         /* Multi-rate */
         if (m_param->mr_load)
         {
-            readMultiRateFile(inFrame->m_multirateDataIn, inFrame->m_poc);
+            readMultiRateFile(inFrame->m_multirateDataIn1, inFrame->m_poc, m_mr_loadFile1);
+            if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
+                readMultiRateFile(inFrame->m_multirateDataIn2, inFrame->m_poc, m_mr_loadFile2);
+            inFrame->m_poc = inFrame->m_multirateDataIn1->poc;
+            sliceType = inFrame->m_multirateDataIn1->sliceType;
+            inFrame->m_lowres.bScenecut = !!inFrame->m_multirateDataIn1->bScenecut;
+            inFrame->m_lowres.satdCost = inFrame->m_multirateDataIn1->satdCost;
+            if (m_param->mr_load & MULTIRATE_REUSE_LOOKAHEAD)
+            {
+                inFrame->m_lowres.sliceType = sliceType;
+                inFrame->m_lowres.bKeyframe = !!inFrame->m_multirateDataIn1->lookahead.keyframe;
+                inFrame->m_lowres.bLastMiniGopBFrame = !!inFrame->m_multirateDataIn1->lookahead.lastMiniGopBFrame;
+                if (m_rateControl->m_isVbv)
+                {
+                    int vbvCount = m_param->lookaheadDepth + m_param->bframes + 2;
+                    for (int index = 0; index < vbvCount; index++)
+                    {
+                        inFrame->m_lowres.plannedSatd[index] = inFrame->m_multirateDataIn1->lookahead.plannedSatd[index];
+                        inFrame->m_lowres.plannedType[index] = inFrame->m_multirateDataIn1->lookahead.plannedType[index];
+                    }
+                }
+            }
         }
 
         /* In analysisSave mode, x265_analysis_data is allocated in inputPic and inFrame points to this */
@@ -2101,12 +2122,44 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
 
             if (m_param->mr_save)
             {
+                int factor = 1;
+                if (m_param->scaleFactor)
+                    factor = m_param->scaleFactor * 2;
+                outFrame->m_multirateDataOut->lookahead.dts = outFrame->m_dts;
+                outFrame->m_multirateDataOut->lookahead.reorderedPts = outFrame->m_reorderedPts;
+                outFrame->m_multirateDataOut->satdCost = outFrame->m_lowres.satdCost * factor;
+                outFrame->m_multirateDataOut->lookahead.keyframe = outFrame->m_lowres.bKeyframe;
+                outFrame->m_multirateDataOut->lookahead.lastMiniGopBFrame = outFrame->m_lowres.bLastMiniGopBFrame;
+                if (m_rateControl->m_isVbv)
+                {
+                    int vbvCount = m_param->lookaheadDepth + m_param->bframes + 2;
+                    for (int index = 0; index < vbvCount; index++)
+                    {
+                        outFrame->m_multirateDataOut->lookahead.plannedSatd[index] = outFrame->m_lowres.plannedSatd[index];
+                        outFrame->m_multirateDataOut->lookahead.plannedType[index] = outFrame->m_lowres.plannedType[index];
+                    }
+                    for (uint32_t index = 0; index < outFrame->m_multirateDataOut->numCuInHeight; index++)
+                    {
+                        outFrame->m_multirateDataOut->lookahead.intraSatdForVbv[index] = outFrame->m_encData->m_rowStat[index].intraSatdForVbv;
+                        outFrame->m_multirateDataOut->lookahead.satdForVbv[index] = outFrame->m_encData->m_rowStat[index].satdForVbv;
+                    }
+                    for (uint32_t index = 0; index < outFrame->m_multirateDataOut->numCUsInFrame; index++)
+                    {
+                        outFrame->m_multirateDataOut->lookahead.intraVbvCost[index] = outFrame->m_encData->m_cuStat[index].intraVbvCost;
+                        outFrame->m_multirateDataOut->lookahead.vbvCost[index] = outFrame->m_encData->m_cuStat[index].vbvCost;
+                    }
+                }
                 writeMultiRateFile(outFrame->m_multirateDataOut, *outFrame->m_encData);
+                x265_free_multirate_data(m_param, outFrame->m_multirateDataOut);
             }
 
             /* Multi-rate */
             if (m_param->mr_load)
-                x265_free_multirate_data(m_param, outFrame->m_multirateDataIn);
+            {
+                x265_free_multirate_data(m_param, outFrame->m_multirateDataIn1);
+                if(m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
+                    x265_free_multirate_data(m_param, outFrame->m_multirateDataIn2);
+            }
 
             /* Free up inputPic->analysisData since it has already been used */
             if ((m_param->analysisLoad && !m_param->analysisSave) || ((m_param->bAnalysisType == AVC_INFO) && slice->m_sliceType != I_SLICE))
@@ -2422,6 +2475,24 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
                 slice->m_maxNumMergeCand = m_param->maxNumMergeCand;
                 slice->m_endCUAddr = slice->realEndAddress(m_sps.numCUsInFrame * m_param->num4x4Partitions);
             }
+            if (m_param->mr_load & MULTIRATE_REUSE_LOOKAHEAD)
+            {
+                frameEnc->m_dts = frameEnc->m_multirateDataIn1->lookahead.dts;
+                frameEnc->m_reorderedPts = frameEnc->m_multirateDataIn1->lookahead.reorderedPts;
+                if (m_rateControl->m_isVbv)
+                {
+                    for (uint32_t index = 0; index < frameEnc->m_multirateDataIn1->numCuInHeight; index++)
+                    {
+                        frameEnc->m_encData->m_rowStat[index].intraSatdForVbv = frameEnc->m_multirateDataIn1->lookahead.intraSatdForVbv[index];
+                        frameEnc->m_encData->m_rowStat[index].satdForVbv = frameEnc->m_multirateDataIn1->lookahead.satdForVbv[index];
+                    }
+                    for (uint32_t index = 0; index < frameEnc->m_multirateDataIn1->numCUsInFrame; index++)
+                    {
+                        frameEnc->m_encData->m_cuStat[index].intraVbvCost = frameEnc->m_multirateDataIn1->lookahead.intraVbvCost[index];
+                        frameEnc->m_encData->m_cuStat[index].vbvCost = frameEnc->m_multirateDataIn1->lookahead.vbvCost[index];
+                    }
+                }
+            }
             if (m_param->analysisLoad && m_param->bDisableLookahead)
             {
                 frameEnc->m_dts = frameEnc->m_analysisData.lookahead.dts;
@@ -2495,13 +2566,15 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
 
             if (m_param->mr_save)
             {
-                x265_multirate_data* refData = frameEnc->m_multirateDataOut;
+                x265_analysis_data* refData = frameEnc->m_multirateDataOut;
                 refData->poc = frameEnc->m_poc;
                 refData->sliceType = frameEnc->m_lowres.sliceType;
+                refData->bScenecut = frameEnc->m_lowres.bScenecut;
                 uint32_t widthInCU = (m_param->sourceWidth + m_param->maxCUSize - 1) >> m_param->maxLog2CUSize;
                 uint32_t heightInCU = (m_param->sourceHeight + m_param->maxCUSize - 1) >> m_param->maxLog2CUSize;
                 uint32_t numCUsInFrame = widthInCU * heightInCU;
                 refData->numCUsInFrame = numCUsInFrame;
+                refData->numCuInHeight = heightInCU;
                 refData->numPartitions = m_param->num4x4Partitions;
                 x265_alloc_multirate_data(m_param, refData);
             }
@@ -4434,135 +4507,226 @@ void Encoder::configure(x265_param *p)
 
 }
 
-void Encoder::readMultiRateFile(x265_multirate_data* refData, int curPoc)
+void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* fp)
 {
-#define MULTIRATE_FREAD(val, size, readSize, fileOffset) \
-    readBytes = fread(val, size, readSize, fileOffset); \
-    if (readBytes != size_t(readSize)) \
-    { \
-        x265_log(NULL, X265_LOG_ERROR, "Error reading multirate data\n"); \
-        x265_free_multirate_data(m_param, refData); \
-        m_aborted = true; \
-        return; \
-    } \
+#define X265_FREAD(val, size, readSize, fileOffset)\
+    if (fread(val, size, readSize, fileOffset) != readSize)\
+    {\
+        x265_log(NULL, X265_LOG_ERROR, "Error reading multirate data\n");\
+        x265_free_multirate_data(m_param, analysis);\
+        m_aborted = true;\
+        return;\
+    }\
 
-    size_t readBytes = 0;
     static uint64_t consumedBytes = 0;
     static uint64_t totalConsumedBytes = 0;
     uint32_t depthBytes = 0;
-    fseeko(m_mr_loadFile1, totalConsumedBytes, SEEK_SET);
-
+    fseeko(fp, totalConsumedBytes, SEEK_SET);
     int poc; uint32_t frameRecordSize;
-    MULTIRATE_FREAD(&frameRecordSize, sizeof(uint32_t), 1, m_mr_loadFile1);
-    MULTIRATE_FREAD(&depthBytes, sizeof(uint32_t), 1, m_mr_loadFile1);
-    MULTIRATE_FREAD(&poc, sizeof(int), 1, m_mr_loadFile1);
+    X265_FREAD(&frameRecordSize, sizeof(uint32_t), 1, fp);
+    X265_FREAD(&depthBytes, sizeof(uint32_t), 1, fp);
+    X265_FREAD(&poc, sizeof(int), 1, fp);
     uint64_t currentOffset = totalConsumedBytes;
     /* Seeking to the right frame Record */
-    while (poc != curPoc && !feof(m_mr_loadFile1))
+    while (poc != curPoc && !feof(fp))
     {
         currentOffset += frameRecordSize;
-        fseeko(m_mr_loadFile1, currentOffset, SEEK_SET);
-        MULTIRATE_FREAD(&frameRecordSize, sizeof(uint32_t), 1, m_mr_loadFile1);
-        MULTIRATE_FREAD(&depthBytes, sizeof(uint32_t), 1, m_mr_loadFile1);
-        MULTIRATE_FREAD(&poc, sizeof(int), 1, m_mr_loadFile1);
+        fseeko(fp, currentOffset, SEEK_SET);
+        X265_FREAD(&frameRecordSize, sizeof(uint32_t), 1, fp);
+        X265_FREAD(&depthBytes, sizeof(uint32_t), 1, fp);
+        X265_FREAD(&poc, sizeof(int), 1, fp);
     }
-
-    if (poc != curPoc || feof(m_mr_loadFile1))
+    if (poc != curPoc || feof(fp))
     {
         x265_log(NULL, X265_LOG_WARNING, "Error reading multirate data: Cannot find POC %d\n", curPoc);
-        x265_free_multirate_data(m_param, refData);
+        x265_free_multirate_data(m_param, analysis);
         return;
     }
-
+    uint32_t numCUsLoad, numCUsInHeightLoad;
     /* Now arrived at the right frame, read the record */
-    refData->poc = poc;
-    refData->frameRecordSize = frameRecordSize;
-    MULTIRATE_FREAD(&refData->sliceType, sizeof(int), 1, m_mr_loadFile1);
-    MULTIRATE_FREAD(&refData->numCUsInFrame, sizeof(int), 1, m_mr_loadFile1);
-    MULTIRATE_FREAD(&refData->numPartitions, sizeof(int), 1, m_mr_loadFile1);
+    analysis->poc = poc;
+    analysis->frameRecordSize = frameRecordSize;
+    X265_FREAD(&analysis->sliceType, sizeof(int), 1, fp);
+    X265_FREAD(&analysis->bScenecut, sizeof(int), 1, fp);
+    X265_FREAD(&analysis->satdCost, sizeof(int64_t), 1, fp);
+    X265_FREAD(&numCUsLoad, sizeof(int), 1, fp);
+    X265_FREAD(&analysis->numPartitions, sizeof(int), 1, fp);
 
-    x265_alloc_multirate_data(m_param, refData);
+    /* Update analysis info to save current settings */
+    uint32_t widthInCU = (m_param->sourceWidth + m_param->maxCUSize - 1) >> m_param->maxLog2CUSize;
+    uint32_t heightInCU = (m_param->sourceHeight + m_param->maxCUSize - 1) >> m_param->maxLog2CUSize;
+    uint32_t numCUsInFrame = widthInCU * heightInCU;
+    analysis->numCUsInFrame = numCUsInFrame;
+    analysis->numCuInHeight = heightInCU;
 
-    if (refData->sliceType == X265_TYPE_IDR || refData->sliceType == X265_TYPE_I)
+    X265_FREAD(&numCUsInHeightLoad, sizeof(uint32_t), 1, fp);
+    X265_FREAD(&analysis->lookahead, sizeof(x265_lookahead_data), 1, fp);
+    int scaledNumPartition = analysis->numPartitions;
+    int factor = 1 << m_param->scaleFactor;
+    if (m_param->scaleFactor)
+        analysis->numPartitions *= factor;
+    /* Memory is allocated for inter and intra analysis data based on the slicetype */
+    x265_alloc_multirate_data(m_param, analysis);
+
+    if (m_rateControl->m_isVbv)
     {
-        refData->sliceType = X265_TYPE_I;
+        size_t vbvCount = m_param->lookaheadDepth + m_param->bframes + 2;
+        X265_FREAD(analysis->lookahead.intraVbvCost, sizeof(uint32_t), numCUsLoad, fp);
+        X265_FREAD(analysis->lookahead.vbvCost, sizeof(uint32_t), numCUsLoad, fp);
+        X265_FREAD(analysis->lookahead.satdForVbv, sizeof(uint32_t), numCUsInHeightLoad, fp);
+        X265_FREAD(analysis->lookahead.intraSatdForVbv, sizeof(uint32_t), numCUsInHeightLoad, fp);
+        X265_FREAD(analysis->lookahead.plannedSatd, sizeof(int64_t), vbvCount, fp);
+        if (m_param->scaleFactor)
+        {
+            for (uint64_t index = 0; index < vbvCount; index++)
+                analysis->lookahead.plannedSatd[index] *= factor;
+            for (uint32_t i = 0; i < numCUsInHeightLoad; i++)
+            {
+                analysis->lookahead.satdForVbv[i] *= factor;
+                analysis->lookahead.intraSatdForVbv[i] *= factor;
+            }
+            for (uint32_t i = 0; i < numCUsLoad; i++)
+            {
+                analysis->lookahead.vbvCost[i] *= factor;
+                analysis->lookahead.intraVbvCost[i] *= factor;
+            }
+        }
+    }
+    if (analysis->sliceType == X265_TYPE_IDR || analysis->sliceType == X265_TYPE_I)
+    {
         uint8_t *tempBuf = NULL, *depthBuf = NULL, *modeBuf = NULL, *partSizes = NULL;
+        int8_t *cuQPBuf = NULL;
         tempBuf = X265_MALLOC(uint8_t, depthBytes * 3);
-        MULTIRATE_FREAD(tempBuf, sizeof(uint8_t), depthBytes * 3, m_mr_loadFile1);
         depthBuf = tempBuf;
         modeBuf = tempBuf + depthBytes;
         partSizes = tempBuf + 2 * depthBytes;
-
+        if (m_param->rc.cuTree)
+            cuQPBuf = X265_MALLOC(int8_t, depthBytes);
+        X265_FREAD(depthBuf, sizeof(uint8_t), depthBytes, fp);
+        X265_FREAD(modeBuf, sizeof(uint8_t), depthBytes, fp);
+        X265_FREAD(partSizes, sizeof(uint8_t), depthBytes, fp);
+        if (m_param->rc.cuTree) { X265_FREAD(cuQPBuf, sizeof(int8_t), depthBytes, fp); }
         size_t count = 0;
         for (uint32_t d = 0; d < depthBytes; d++)
         {
-            int bytes = refData->numPartitions >> (depthBuf[d] * 2);
-            memset(&((x265_analysis_intra_data *)refData->intraData1)->depth[count], depthBuf[d], bytes);
-            memset(&((x265_analysis_intra_data *)refData->intraData1)->chromaModes[count], modeBuf[d], bytes);
-            memset(&((x265_analysis_intra_data *)refData->intraData1)->partSizes[count], partSizes[d], bytes);
+            int bytes = analysis->numPartitions >> (depthBuf[d] * 2);
+            if (m_param->scaleFactor)
+            {
+                if (depthBuf[d] == 0)
+                    depthBuf[d] = 1;
+                if (partSizes[d] == SIZE_NxN)
+                    partSizes[d] = SIZE_2Nx2N;
+            }
+            memset(&(analysis->intraData)->depth[count], depthBuf[d], bytes);
+            memset(&(analysis->intraData)->chromaModes[count], modeBuf[d], bytes);
+            memset(&(analysis->intraData)->partSizes[count], partSizes[d], bytes);
+            if (m_param->rc.cuTree)
+                memset(&(analysis->intraData)->cuQPOff[count], cuQPBuf[d], bytes);
             count += bytes;
         }
-        MULTIRATE_FREAD(((x265_analysis_intra_data *)refData->intraData1)->modes, sizeof(uint8_t), refData->numCUsInFrame * refData->numPartitions, m_mr_loadFile1);
+        if (!m_param->scaleFactor)
+        {
+            X265_FREAD((analysis->intraData)->modes, sizeof(uint8_t), numCUsLoad * analysis->numPartitions, fp);
+        }
+        else
+        {
+            uint8_t *tempLumaBuf = X265_MALLOC(uint8_t, numCUsLoad * scaledNumPartition);
+            X265_FREAD(tempLumaBuf, sizeof(uint8_t), numCUsLoad * scaledNumPartition, fp);
+            for (uint32_t ctu32Idx = 0, cnt = 0; ctu32Idx < numCUsLoad * scaledNumPartition; ctu32Idx++, cnt += factor)
+                memset(&(analysis->intraData)->modes[cnt], tempLumaBuf[ctu32Idx], factor);
+            X265_FREE(tempLumaBuf);
+        }
+        if (m_param->rc.cuTree)
+            X265_FREE(cuQPBuf);
         X265_FREE(tempBuf);
         consumedBytes += frameRecordSize;
     }
     else
     {
-        uint32_t numDir = refData->sliceType == X265_TYPE_P ? 1 : 2;
+        uint32_t numDir = analysis->sliceType == X265_TYPE_P ? 1 : 2;
         uint32_t numPlanes = m_param->internalCsp == X265_CSP_I400 ? 1 : 3;
-        MULTIRATE_FREAD((WeightParam*)refData->wt, sizeof(WeightParam), numPlanes * numDir, m_mr_loadFile1);
+        X265_FREAD((WeightParam*)analysis->wt, sizeof(WeightParam), numPlanes * numDir, fp);
         uint8_t *tempBuf = NULL, *depthBuf = NULL, *modeBuf = NULL, *partSize = NULL, *mergeFlag = NULL;
         uint8_t *interDir = NULL, *chromaDir = NULL, *mvpIdx[2];
         MV* mv[2];
         int8_t* refIdx[2];
+        int8_t* cuQPBuf = NULL;
         int numBuf = 5;
         bool bIntraInInter = false;
-        bIntraInInter = (refData->sliceType == X265_TYPE_P || m_param->bIntraInBFrames);
+        bIntraInInter = (analysis->sliceType == X265_TYPE_P || m_param->bIntraInBFrames);
         if (bIntraInInter) numBuf++;
 
         tempBuf = X265_MALLOC(uint8_t, depthBytes * numBuf);
-        MULTIRATE_FREAD(tempBuf, sizeof(uint8_t), depthBytes * numBuf, m_mr_loadFile1);
-
         depthBuf = tempBuf;
         modeBuf = tempBuf + depthBytes;
+        if (m_param->rc.cuTree)
+            cuQPBuf = X265_MALLOC(int8_t, depthBytes);
+
+        X265_FREAD(depthBuf, sizeof(uint8_t), depthBytes, fp);
+        X265_FREAD(modeBuf, sizeof(uint8_t), depthBytes, fp);
+        if (m_param->rc.cuTree) { X265_FREAD(cuQPBuf, sizeof(int8_t), depthBytes, fp); }
         partSize = modeBuf + depthBytes;
         mergeFlag = partSize + depthBytes;
+        X265_FREAD(partSize, sizeof(uint8_t), depthBytes, fp);
+        X265_FREAD(mergeFlag, sizeof(uint8_t), depthBytes, fp);
         interDir = mergeFlag + depthBytes;
-        if (bIntraInInter) chromaDir = interDir + depthBytes;
+        X265_FREAD(interDir, sizeof(uint8_t), depthBytes, fp);
+        if (bIntraInInter)
+        {
+            chromaDir = interDir + depthBytes;
+            X265_FREAD(chromaDir, sizeof(uint8_t), depthBytes, fp);
+        }
         for (uint32_t i = 0; i < numDir; i++)
         {
-            mvpIdx[i] = X265_MALLOC(uint8_t, depthBytes * 3);
-            MULTIRATE_FREAD(mvpIdx[i], sizeof(uint8_t), depthBytes, m_mr_loadFile1);
+            mvpIdx[i] = X265_MALLOC(uint8_t, depthBytes);
             refIdx[i] = X265_MALLOC(int8_t, depthBytes);
-            MULTIRATE_FREAD(refIdx[i], sizeof(int8_t), depthBytes, m_mr_loadFile1);
             mv[i] = X265_MALLOC(MV, depthBytes);
-            MULTIRATE_FREAD(mv[i], sizeof(MV), depthBytes, m_mr_loadFile1);
+            X265_FREAD(mvpIdx[i], sizeof(uint8_t), depthBytes, fp);
+            X265_FREAD(refIdx[i], sizeof(int8_t), depthBytes, fp);
+            X265_FREAD(mv[i], sizeof(MV), depthBytes, fp);
         }
+
         size_t count = 0;
         for (uint32_t d = 0; d < depthBytes; d++)
         {
-            int bytes = refData->numPartitions >> (depthBuf[d] * 2);
-            memset(&((x265_analysis_inter_data *)refData->interData1)->depth[count], depthBuf[d], bytes);
-            memset(&((x265_analysis_inter_data *)refData->interData1)->modes[count], modeBuf[d], bytes);
-            memset(&((x265_analysis_inter_data *)refData->interData1)->partSize[count], partSize[d], bytes);
-            int numPU = nbPartsTable[(int)partSize[d]];
+            int bytes = analysis->numPartitions >> (depthBuf[d] * 2);
+            if (m_param->scaleFactor && modeBuf[d] == MODE_INTRA && depthBuf[d] == 0)
+                depthBuf[d] = 1;
+            memset(&(analysis->interData)->depth[count], depthBuf[d], bytes);
+            memset(&(analysis->interData)->modes[count], modeBuf[d], bytes);
+            if (m_param->rc.cuTree)
+                memset(&(analysis->interData)->cuQPOff[count], cuQPBuf[d], bytes);
+
+            if (m_param->scaleFactor && modeBuf[d] == MODE_INTRA && partSize[d] == SIZE_NxN)
+                partSize[d] = SIZE_2Nx2N;
+            memset(&(analysis->interData)->partSize[count], partSize[d], bytes);
+            int numPU = (modeBuf[d] == MODE_INTRA) ? 1 : nbPartsTable[(int)partSize[d]];
             for (int pu = 0; pu < numPU; pu++)
             {
                 if (pu) d++;
-                ((x265_analysis_inter_data *)refData->interData1)->mergeFlag[count + pu] = mergeFlag[d];
-                ((x265_analysis_inter_data *)refData->interData1)->interDir[count + pu] = interDir[d];
+                (analysis->interData)->mergeFlag[count + pu] = mergeFlag[d];
+                (analysis->interData)->interDir[count + pu] = interDir[d];
                 for (uint32_t i = 0; i < numDir; i++)
                 {
-                    ((x265_analysis_inter_data *)refData->interData1)->mvpIdx[i][count + pu] = mvpIdx[i][d];
-                    ((x265_analysis_inter_data *)refData->interData1)->refIdx[i][count + pu] = refIdx[i][d];
-                    memcpy(&((x265_analysis_inter_data *)refData->interData1)->mv[i][count + pu], &mv[i][d], sizeof(MV));
+                    (analysis->interData)->mvpIdx[i][count + pu] = mvpIdx[i][d];
+                    (analysis->interData)->refIdx[i][count + pu] = refIdx[i][d];
+                    if (m_param->scaleFactor)
+                    {
+                        mv[i][d].x *= (int32_t)m_param->scaleFactor;
+                        mv[i][d].y *= (int32_t)m_param->scaleFactor;
+                    }
+                    memcpy(&(analysis->interData)->mv[i][count + pu], &mv[i][d], sizeof(MV));
                 }
             }
             if (bIntraInInter)
-                memset(&((x265_analysis_intra_data *)refData->intraData1)->chromaModes[count], chromaDir[d], bytes);
+                memset(&(analysis->intraData)->chromaModes[count], chromaDir[d], bytes);
             count += bytes;
         }
+
+        if (m_param->rc.cuTree)
+            X265_FREE(cuQPBuf);
         X265_FREE(tempBuf);
+
         for (uint32_t i = 0; i < numDir; i++)
         {
             X265_FREE(mvpIdx[i]);
@@ -4571,139 +4735,24 @@ void Encoder::readMultiRateFile(x265_multirate_data* refData, int curPoc)
         }
         if (bIntraInInter)
         {
-            MULTIRATE_FREAD(((x265_analysis_intra_data *)refData->intraData1)->modes, sizeof(uint8_t), refData->numCUsInFrame * refData->numPartitions, m_mr_loadFile1);
+            if (!m_param->scaleFactor)
+            {
+                X265_FREAD((analysis->intraData)->modes, sizeof(uint8_t), numCUsLoad * analysis->numPartitions, fp);
+            }
+            else
+            {
+                uint8_t *tempLumaBuf = X265_MALLOC(uint8_t, numCUsLoad * scaledNumPartition);
+                X265_FREAD(tempLumaBuf, sizeof(uint8_t), numCUsLoad * scaledNumPartition, fp);
+                for (uint32_t ctu32Idx = 0, cnt = 0; ctu32Idx < numCUsLoad * scaledNumPartition; ctu32Idx++, cnt += factor)
+                    memset(&(analysis->intraData)->modes[cnt], tempLumaBuf[ctu32Idx], factor);
+                X265_FREE(tempLumaBuf);
+            }
         }
         consumedBytes += frameRecordSize;
+        if (numDir == 1)
+            totalConsumedBytes = consumedBytes;
     }
-
-    if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
-    {
-        readBytes = 0;
-        consumedBytes = 0;
-        totalConsumedBytes = 0;
-        depthBytes = 0;
-        fseeko(m_mr_loadFile2, totalConsumedBytes, SEEK_SET);
-
-        MULTIRATE_FREAD(&frameRecordSize, sizeof(uint32_t), 1, m_mr_loadFile2);
-        MULTIRATE_FREAD(&depthBytes, sizeof(uint32_t), 1, m_mr_loadFile2);
-        MULTIRATE_FREAD(&poc, sizeof(int), 1, m_mr_loadFile2);
-        currentOffset = totalConsumedBytes;
-        /* Seeking to the right frame Record */
-        while (poc != curPoc && !feof(m_mr_loadFile2))
-        {
-            currentOffset += frameRecordSize;
-            fseeko(m_mr_loadFile2, currentOffset, SEEK_SET);
-            MULTIRATE_FREAD(&frameRecordSize, sizeof(uint32_t), 1, m_mr_loadFile2);
-            MULTIRATE_FREAD(&depthBytes, sizeof(uint32_t), 1, m_mr_loadFile2);
-            MULTIRATE_FREAD(&poc, sizeof(int), 1, m_mr_loadFile2);
-        }
-        if (poc != curPoc || feof(m_mr_loadFile2))
-        {
-            x265_log(NULL, X265_LOG_WARNING, "Error reading multirate data: Cannot find POC %d\n", curPoc);
-            x265_free_multirate_data(m_param, refData);
-            return;
-        }
-
-        /* Now arrived at the right frame, read the record */
-        refData->poc = poc;
-        refData->frameRecordSize = frameRecordSize;
-        MULTIRATE_FREAD(&refData->sliceType, sizeof(int), 1, m_mr_loadFile2);
-        MULTIRATE_FREAD(&refData->numCUsInFrame, sizeof(int), 1, m_mr_loadFile2);
-        MULTIRATE_FREAD(&refData->numPartitions, sizeof(int), 1, m_mr_loadFile2);
-
-        if (refData->sliceType == X265_TYPE_IDR || refData->sliceType == X265_TYPE_I)
-        {
-            refData->sliceType = X265_TYPE_I;
-            uint8_t *tempBuf = NULL, *depthBuf = NULL, *modeBuf = NULL, *partSizes = NULL;
-            tempBuf = X265_MALLOC(uint8_t, depthBytes * 3);
-            MULTIRATE_FREAD(tempBuf, sizeof(uint8_t), depthBytes * 3, m_mr_loadFile2);
-            depthBuf = tempBuf;
-            modeBuf = tempBuf + depthBytes;
-            partSizes = tempBuf + 2 * depthBytes;
-
-            size_t count = 0;
-            for (uint32_t d = 0; d < depthBytes; d++)
-            {
-                int bytes = refData->numPartitions >> (depthBuf[d] * 2);
-                memset(&((x265_analysis_intra_data *)refData->intraData2)->depth[count], depthBuf[d], bytes);
-                memset(&((x265_analysis_intra_data *)refData->intraData2)->chromaModes[count], modeBuf[d], bytes);
-                memset(&((x265_analysis_intra_data *)refData->intraData2)->partSizes[count], partSizes[d], bytes);
-                count += bytes;
-            }
-            MULTIRATE_FREAD(((x265_analysis_intra_data *)refData->intraData2)->modes, sizeof(uint8_t), refData->numCUsInFrame * refData->numPartitions, m_mr_loadFile2);
-            X265_FREE(tempBuf);
-            consumedBytes += frameRecordSize;
-        }
-        else
-        {
-            uint32_t numDir = refData->sliceType == X265_TYPE_P ? 1 : 2;
-            uint32_t numPlanes = m_param->internalCsp == X265_CSP_I400 ? 1 : 3;
-            MULTIRATE_FREAD((WeightParam*)refData->wt, sizeof(WeightParam), numPlanes * numDir, m_mr_loadFile2);
-            uint8_t *tempBuf = NULL, *depthBuf = NULL, *modeBuf = NULL, *partSize = NULL, *mergeFlag = NULL;
-            uint8_t *interDir = NULL, *chromaDir = NULL, *mvpIdx[2];
-            MV* mv[2];
-            int8_t* refIdx[2];
-            int numBuf = 5;
-            bool bIntraInInter = false;
-            bIntraInInter = (refData->sliceType == X265_TYPE_P || m_param->bIntraInBFrames);
-            if (bIntraInInter) numBuf++;
-
-            tempBuf = X265_MALLOC(uint8_t, depthBytes * numBuf);
-            MULTIRATE_FREAD(tempBuf, sizeof(uint8_t), depthBytes * numBuf, m_mr_loadFile2);
-
-            depthBuf = tempBuf;
-            modeBuf = tempBuf + depthBytes;
-            partSize = modeBuf + depthBytes;
-            mergeFlag = partSize + depthBytes;
-            interDir = mergeFlag + depthBytes;
-            if (bIntraInInter) chromaDir = interDir + depthBytes;
-            for (uint32_t i = 0; i < numDir; i++)
-            {
-                mvpIdx[i] = X265_MALLOC(uint8_t, depthBytes * 3);
-                MULTIRATE_FREAD(mvpIdx[i], sizeof(uint8_t), depthBytes, m_mr_loadFile2);
-                refIdx[i] = X265_MALLOC(int8_t, depthBytes);
-                MULTIRATE_FREAD(refIdx[i], sizeof(int8_t), depthBytes, m_mr_loadFile2);
-                mv[i] = X265_MALLOC(MV, depthBytes);
-                MULTIRATE_FREAD(mv[i], sizeof(MV), depthBytes, m_mr_loadFile2);
-            }
-            size_t count = 0;
-            for (uint32_t d = 0; d < depthBytes; d++)
-            {
-                int bytes = refData->numPartitions >> (depthBuf[d] * 2);
-                memset(&((x265_analysis_inter_data *)refData->interData2)->depth[count], depthBuf[d], bytes);
-                memset(&((x265_analysis_inter_data *)refData->interData2)->modes[count], modeBuf[d], bytes);
-                memset(&((x265_analysis_inter_data *)refData->interData2)->partSize[count], partSize[d], bytes);
-                int numPU = nbPartsTable[(int)partSize[d]];
-                for (int pu = 0; pu < numPU; pu++)
-                {
-                    if (pu) d++;
-                    ((x265_analysis_inter_data *)refData->interData2)->mergeFlag[count + pu] = mergeFlag[d];
-                    ((x265_analysis_inter_data *)refData->interData2)->interDir[count + pu] = interDir[d];
-                    for (uint32_t i = 0; i < numDir; i++)
-                    {
-                        ((x265_analysis_inter_data *)refData->interData2)->mvpIdx[i][count + pu] = mvpIdx[i][d];
-                        ((x265_analysis_inter_data *)refData->interData2)->refIdx[i][count + pu] = refIdx[i][d];
-                        memcpy(&((x265_analysis_inter_data *)refData->interData2)->mv[i][count + pu], &mv[i][d], sizeof(MV));
-                    }
-                }
-                if (bIntraInInter)
-                    memset(&((x265_analysis_intra_data *)refData->intraData2)->chromaModes[count], chromaDir[d], bytes);
-                count += bytes;
-            }
-            X265_FREE(tempBuf);
-            for (uint32_t i = 0; i < numDir; i++)
-            {
-                X265_FREE(mvpIdx[i]);
-                X265_FREE(refIdx[i]);
-                X265_FREE(mv[i]);
-            }
-            if (bIntraInInter)
-            {
-                MULTIRATE_FREAD(((x265_analysis_intra_data *)refData->intraData2)->modes, sizeof(uint8_t), refData->numCUsInFrame * refData->numPartitions, m_mr_loadFile2);
-            }
-            consumedBytes += frameRecordSize;
-        }
-    }
+#undef X265_FREAD
 }
 
 void Encoder::readAnalysisFile(x265_analysis_data* analysis, int curPoc, const x265_picture* picIn, int paramBytes)
@@ -5844,41 +5893,46 @@ void Encoder::copyDistortionData(x265_analysis_data* analysis, FrameData &curEnc
 }
 
 /* Multi-rate save mode */
-void Encoder::writeMultiRateFile(x265_multirate_data* refData, FrameData &curEncData)
+void Encoder::writeMultiRateFile(x265_analysis_data* analysis, FrameData &curEncData)
 {
-#define MULTIRATE_FWRITE(val, size, writeSize, fileOffset) \
-    writeBytes = fwrite(val, size, writeSize, fileOffset); \
-    if (writeBytes < size_t(writeSize)) \
+#define X265_FWRITE(val, size, writeSize, fileOffset) \
+    if (fwrite(val, size, writeSize, fileOffset) < writeSize) \
     { \
         x265_log(NULL, X265_LOG_ERROR, "Error writing multirate data\n"); \
+        x265_free_analysis_data(m_param, analysis); \
         m_aborted = true; \
         return; \
     } \
 
     uint32_t depthBytes = 0;
-    size_t writeBytes = 0;
     uint32_t numDir, numPlanes;
     bool bIntraInInter = false;
-
     /* calculate frameRecordSize */
-    refData->frameRecordSize = sizeof(refData->frameRecordSize) + sizeof(depthBytes) + sizeof(refData->poc) + sizeof(refData->sliceType) +
-        sizeof(refData->numCUsInFrame) + sizeof(refData->numPartitions);
-    if (refData->sliceType > X265_TYPE_I)
+    analysis->frameRecordSize = sizeof(analysis->frameRecordSize) + sizeof(depthBytes) + sizeof(analysis->poc) + sizeof(analysis->sliceType) +
+        sizeof(analysis->numCUsInFrame) + sizeof(analysis->numPartitions) + sizeof(analysis->bScenecut) + sizeof(analysis->satdCost);
+    size_t vbvCount = m_param->lookaheadDepth + m_param->bframes + 2;
+    analysis->frameRecordSize += sizeof(analysis->numCuInHeight) + sizeof(x265_lookahead_data);
+    if (m_rateControl->m_isVbv)
     {
-        numDir = (refData->sliceType == X265_TYPE_P) ? 1 : 2;
-        numPlanes = m_param->internalCsp == X265_CSP_I400 ? 1 : 3;
-        refData->frameRecordSize += sizeof(WeightParam) * numPlanes * numDir;
+        analysis->frameRecordSize += (2 * sizeof(uint32_t) * analysis->numCUsInFrame) + (2 * sizeof(uint32_t) * analysis->numCuInHeight) +
+            (sizeof(int64_t) * analysis->numCUsInFrame);
     }
-
-    if (refData->sliceType == X265_TYPE_IDR || refData->sliceType == X265_TYPE_I)
+    if (analysis->sliceType > X265_TYPE_I)
     {
-        for (uint32_t cuAddr = 0; cuAddr < refData->numCUsInFrame; cuAddr++)
+        numDir = (analysis->sliceType == X265_TYPE_P) ? 1 : 2;
+        numPlanes = m_param->internalCsp == X265_CSP_I400 ? 1 : 3;
+        analysis->frameRecordSize += sizeof(WeightParam) * numPlanes * numDir;
+    }
+    if (analysis->sliceType == X265_TYPE_IDR || analysis->sliceType == X265_TYPE_I)
+    {
+        for (uint32_t cuAddr = 0; cuAddr < analysis->numCUsInFrame; cuAddr++)
         {
             uint8_t depth = 0;
             uint8_t mode = 0;
             uint8_t partSize = 0;
             CUData* ctu = curEncData.getPicCTU(cuAddr);
-            x265_analysis_intra_data* intraDataCTU = (x265_analysis_intra_data*)refData->intraData1;
+            x265_analysis_intra_data* intraDataCTU = analysis->intraData;
+            int baseQP = (int)(ctu->m_encData->m_cuStat[cuAddr].baseQp + 0.5);
             for (uint32_t absPartIdx = 0; absPartIdx < ctu->m_numPartitions; depthBytes++)
             {
                 depth = ctu->m_cuDepth[absPartIdx];
@@ -5887,6 +5941,8 @@ void Encoder::writeMultiRateFile(x265_multirate_data* refData, FrameData &curEnc
                 intraDataCTU->chromaModes[depthBytes] = mode;
                 partSize = ctu->m_partSize[absPartIdx];
                 intraDataCTU->partSizes[depthBytes] = partSize;
+                if (m_param->rc.cuTree)
+                    intraDataCTU->cuQPOff[depthBytes] = (int8_t)(ctu->m_qpAnalysis[absPartIdx] - baseQP);
                 absPartIdx += ctu->m_numPartitions >> (depth * 2);
             }
             memcpy(&intraDataCTU->modes[ctu->m_cuAddr * ctu->m_numPartitions], ctu->m_lumaIntraDir, sizeof(uint8_t)* ctu->m_numPartitions);
@@ -5894,25 +5950,28 @@ void Encoder::writeMultiRateFile(x265_multirate_data* refData, FrameData &curEnc
     }
     else
     {
-        bIntraInInter = (refData->sliceType == X265_TYPE_P || m_param->bIntraInBFrames);
-        for (uint32_t cuAddr = 0; cuAddr < refData->numCUsInFrame; cuAddr++)
+        bIntraInInter = (analysis->sliceType == X265_TYPE_P || m_param->bIntraInBFrames);
+        for (uint32_t cuAddr = 0; cuAddr < analysis->numCUsInFrame; cuAddr++)
         {
             uint8_t depth = 0;
             uint8_t predMode = 0;
             uint8_t partSize = 0;
             CUData* ctu = curEncData.getPicCTU(cuAddr);
-            x265_analysis_inter_data* interDataCTU = (x265_analysis_inter_data*)refData->interData1;
-            x265_analysis_intra_data* intraDataCTU = (x265_analysis_intra_data*)refData->intraData1;
+            x265_analysis_inter_data* interDataCTU = analysis->interData;
+            x265_analysis_intra_data* intraDataCTU = analysis->intraData;
+            int baseQP = (int)(ctu->m_encData->m_cuStat[cuAddr].baseQp + 0.5);
             for (uint32_t absPartIdx = 0; absPartIdx < ctu->m_numPartitions; depthBytes++)
             {
                 depth = ctu->m_cuDepth[absPartIdx];
                 interDataCTU->depth[depthBytes] = depth;
                 predMode = ctu->m_predMode[absPartIdx];
                 interDataCTU->modes[depthBytes] = predMode;
+                if (m_param->rc.cuTree)
+                    interDataCTU->cuQPOff[depthBytes] = (int8_t)(ctu->m_qpAnalysis[absPartIdx] - baseQP);
                 partSize = ctu->m_partSize[absPartIdx];
                 interDataCTU->partSize[depthBytes] = partSize;
                 /* Store per PU data */
-                uint32_t numPU = nbPartsTable[(int)partSize];
+                uint32_t numPU = (predMode == MODE_INTRA) ? 1 : nbPartsTable[(int)partSize];
                 for (uint32_t puIdx = 0; puIdx < numPU; puIdx++)
                 {
                     uint32_t puabsPartIdx = ctu->getPUOffset(puIdx, absPartIdx) + absPartIdx;
@@ -5935,62 +5994,78 @@ void Encoder::writeMultiRateFile(x265_multirate_data* refData, FrameData &curEnc
         }
     }
 
-    if (refData->sliceType == X265_TYPE_IDR || refData->sliceType == X265_TYPE_I)
-        refData->frameRecordSize += sizeof(uint8_t) * refData->numCUsInFrame * refData->numPartitions + depthBytes * 3;
+    if ((analysis->sliceType == X265_TYPE_IDR || analysis->sliceType == X265_TYPE_I) && m_param->rc.cuTree)
+        analysis->frameRecordSize += sizeof(uint8_t)* analysis->numCUsInFrame * analysis->numPartitions + depthBytes * 3 + (sizeof(int8_t) * depthBytes);
+    else if (analysis->sliceType == X265_TYPE_IDR || analysis->sliceType == X265_TYPE_I)
+        analysis->frameRecordSize += sizeof(uint8_t)* analysis->numCUsInFrame * analysis->numPartitions + depthBytes * 3;
     else
     {
-        /* Add sizeof depth, modes, partSize, mergeFlag */
-        refData->frameRecordSize += depthBytes * 4;
+        /* Add sizeof depth, modes, partSize, cuQPOffset, mergeFlag */
+        analysis->frameRecordSize += depthBytes * 2;
+        if (m_param->rc.cuTree)
+            analysis->frameRecordSize += (sizeof(int8_t) * depthBytes);
+        analysis->frameRecordSize += (depthBytes * 2);
+
         /* Add Size of interDir, mvpIdx, refIdx, mv, luma and chroma modes */
-        refData->frameRecordSize += depthBytes;
-        refData->frameRecordSize += sizeof(uint8_t)* depthBytes * numDir;
-        refData->frameRecordSize += sizeof(int8_t)* depthBytes * numDir;
-        refData->frameRecordSize += sizeof(MV)* depthBytes * numDir;
+        analysis->frameRecordSize += depthBytes;
+        analysis->frameRecordSize += sizeof(uint8_t)* depthBytes * numDir;
+        analysis->frameRecordSize += sizeof(int8_t)* depthBytes * numDir;
+        analysis->frameRecordSize += sizeof(MV)* depthBytes * numDir;
         if (bIntraInInter)
-            refData->frameRecordSize += sizeof(uint8_t)* refData->numCUsInFrame * refData->numPartitions + depthBytes;
+            analysis->frameRecordSize += sizeof(uint8_t)* analysis->numCUsInFrame * analysis->numPartitions + depthBytes;
     }
-
-    MULTIRATE_FWRITE(&refData->frameRecordSize, sizeof(uint32_t), 1, m_mr_saveFile);
-    MULTIRATE_FWRITE(&depthBytes, sizeof(uint32_t), 1, m_mr_saveFile);
-    MULTIRATE_FWRITE(&refData->poc, sizeof(int), 1, m_mr_saveFile);
-    MULTIRATE_FWRITE(&refData->sliceType, sizeof(int), 1, m_mr_saveFile);
-    MULTIRATE_FWRITE(&refData->numCUsInFrame, sizeof(int), 1, m_mr_saveFile);
-    MULTIRATE_FWRITE(&refData->numPartitions, sizeof(int), 1, m_mr_saveFile);
-    if (refData->sliceType > X265_TYPE_I)
+    analysis->depthBytes = depthBytes;
+    X265_FWRITE(&analysis->frameRecordSize, sizeof(uint32_t), 1, m_mr_saveFile);
+    X265_FWRITE(&depthBytes, sizeof(uint32_t), 1, m_mr_saveFile);
+    X265_FWRITE(&analysis->poc, sizeof(int), 1, m_mr_saveFile);
+    X265_FWRITE(&analysis->sliceType, sizeof(int), 1, m_mr_saveFile);
+    X265_FWRITE(&analysis->bScenecut, sizeof(int), 1, m_mr_saveFile);
+    X265_FWRITE(&analysis->satdCost, sizeof(int64_t), 1, m_mr_saveFile);
+    X265_FWRITE(&analysis->numCUsInFrame, sizeof(int), 1, m_mr_saveFile);
+    X265_FWRITE(&analysis->numPartitions, sizeof(int), 1, m_mr_saveFile);
+    X265_FWRITE(&analysis->numCuInHeight, sizeof(int), 1, m_mr_saveFile);
+    X265_FWRITE(&analysis->lookahead, sizeof(x265_lookahead_data), 1, m_mr_saveFile);
+    if (m_rateControl->m_isVbv)
     {
-        MULTIRATE_FWRITE((WeightParam*)refData->wt, sizeof(WeightParam), numPlanes * numDir, m_mr_saveFile);
+        X265_FWRITE(analysis->lookahead.intraVbvCost, sizeof(uint32_t), analysis->numCUsInFrame, m_mr_saveFile);
+        X265_FWRITE(analysis->lookahead.vbvCost, sizeof(uint32_t), analysis->numCUsInFrame, m_mr_saveFile);
+        X265_FWRITE(analysis->lookahead.satdForVbv, sizeof(uint32_t), analysis->numCuInHeight, m_mr_saveFile);
+        X265_FWRITE(analysis->lookahead.intraSatdForVbv, sizeof(uint32_t), analysis->numCuInHeight, m_mr_saveFile);
+        X265_FWRITE(analysis->lookahead.plannedSatd, sizeof(int64_t), vbvCount, m_mr_saveFile);
     }
+    if (analysis->sliceType > X265_TYPE_I)
+        X265_FWRITE((WeightParam*)analysis->wt, sizeof(WeightParam), numPlanes * numDir, m_mr_saveFile);
 
-    if (refData->sliceType == X265_TYPE_IDR || refData->sliceType == X265_TYPE_I)
+    if (analysis->sliceType == X265_TYPE_IDR || analysis->sliceType == X265_TYPE_I)
     {
-        MULTIRATE_FWRITE(((x265_analysis_intra_data*)refData->intraData1)->depth, sizeof(uint8_t), depthBytes, m_mr_saveFile);
-        MULTIRATE_FWRITE(((x265_analysis_intra_data*)refData->intraData1)->chromaModes, sizeof(uint8_t), depthBytes, m_mr_saveFile);
-        MULTIRATE_FWRITE(((x265_analysis_intra_data*)refData->intraData1)->partSizes, sizeof(char), depthBytes, m_mr_saveFile);
-        MULTIRATE_FWRITE(((x265_analysis_intra_data*)refData->intraData1)->modes, sizeof(uint8_t), refData->numCUsInFrame * refData->numPartitions, m_mr_saveFile);
+        X265_FWRITE((analysis->intraData)->depth, sizeof(uint8_t), depthBytes, m_mr_saveFile);
+        X265_FWRITE((analysis->intraData)->chromaModes, sizeof(uint8_t), depthBytes, m_mr_saveFile);
+        X265_FWRITE((analysis->intraData)->partSizes, sizeof(char), depthBytes, m_mr_saveFile);
+        if (m_param->rc.cuTree)
+            X265_FWRITE((analysis->intraData)->cuQPOff, sizeof(int8_t), depthBytes, m_mr_saveFile);
+        X265_FWRITE((analysis->intraData)->modes, sizeof(uint8_t), analysis->numCUsInFrame * analysis->numPartitions, m_mr_saveFile);
     }
     else
     {
-        MULTIRATE_FWRITE(((x265_analysis_inter_data*)refData->interData1)->depth, sizeof(uint8_t), depthBytes, m_mr_saveFile);
-        MULTIRATE_FWRITE(((x265_analysis_inter_data*)refData->interData1)->modes, sizeof(uint8_t), depthBytes, m_mr_saveFile);
-        MULTIRATE_FWRITE(((x265_analysis_inter_data*)refData->interData1)->partSize, sizeof(uint8_t), depthBytes, m_mr_saveFile);
-        MULTIRATE_FWRITE(((x265_analysis_inter_data*)refData->interData1)->mergeFlag, sizeof(uint8_t), depthBytes, m_mr_saveFile);
-        MULTIRATE_FWRITE(((x265_analysis_inter_data*)refData->interData1)->interDir, sizeof(uint8_t), depthBytes, m_mr_saveFile);
-        if (bIntraInInter)
-        {
-            MULTIRATE_FWRITE(((x265_analysis_intra_data*)refData->intraData1)->chromaModes, sizeof(uint8_t), depthBytes, m_mr_saveFile);
-        }
+        X265_FWRITE((analysis->interData)->depth, sizeof(uint8_t), depthBytes, m_mr_saveFile);
+        X265_FWRITE((analysis->interData)->modes, sizeof(uint8_t), depthBytes, m_mr_saveFile);
+        if (m_param->rc.cuTree)
+            X265_FWRITE((analysis->interData)->cuQPOff, sizeof(int8_t), depthBytes, m_mr_saveFile);
+
+        X265_FWRITE((analysis->interData)->partSize, sizeof(uint8_t), depthBytes, m_mr_saveFile);
+        X265_FWRITE((analysis->interData)->mergeFlag, sizeof(uint8_t), depthBytes, m_mr_saveFile);
+        X265_FWRITE((analysis->interData)->interDir, sizeof(uint8_t), depthBytes, m_mr_saveFile);
+        if (bIntraInInter) X265_FWRITE((analysis->intraData)->chromaModes, sizeof(uint8_t), depthBytes, m_mr_saveFile);
         for (uint32_t dir = 0; dir < numDir; dir++)
         {
-            MULTIRATE_FWRITE(((x265_analysis_inter_data*)refData->interData1)->mvpIdx[dir], sizeof(uint8_t), depthBytes, m_mr_saveFile);
-            MULTIRATE_FWRITE(((x265_analysis_inter_data*)refData->interData1)->refIdx[dir], sizeof(int8_t), depthBytes, m_mr_saveFile);
-            MULTIRATE_FWRITE(((x265_analysis_inter_data*)refData->interData1)->mv[dir], sizeof(MV), depthBytes, m_mr_saveFile);
+            X265_FWRITE((analysis->interData)->mvpIdx[dir], sizeof(uint8_t), depthBytes, m_mr_saveFile);
+            X265_FWRITE((analysis->interData)->refIdx[dir], sizeof(int8_t), depthBytes, m_mr_saveFile);
+            X265_FWRITE((analysis->interData)->mv[dir], sizeof(MV), depthBytes, m_mr_saveFile);
         }
         if (bIntraInInter)
-        {
-            MULTIRATE_FWRITE(((x265_analysis_intra_data*)refData->intraData1)->modes, sizeof(uint8_t), refData->numCUsInFrame * refData->numPartitions, m_mr_saveFile);
-        }
+            X265_FWRITE((analysis->intraData)->modes, sizeof(uint8_t), analysis->numCUsInFrame * analysis->numPartitions, m_mr_saveFile);
     }
-#undef MULTIRATE_FWRITE
+#undef X265_FWRITE
 }
 
 void Encoder::writeAnalysisFile(x265_analysis_data* analysis, FrameData &curEncData)

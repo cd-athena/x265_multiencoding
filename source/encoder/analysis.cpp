@@ -197,27 +197,27 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
     {
         if (m_slice->m_sliceType != I_SLICE)
         {
-            m_reuseInterDataCTU1 = (x265_analysis_inter_data*)m_frame->m_multirateDataIn->interData1;
+            m_reuseInterDataCTU1 = (x265_analysis_inter_data*)m_frame->m_multirateDataIn1->interData;
             m_reuseDepth1 = &m_reuseInterDataCTU1->depth[ctu.m_cuAddr * numPartition];
             m_reuseModes1 = &m_reuseInterDataCTU1->modes[ctu.m_cuAddr * numPartition];
             m_reusePartSize1 = &m_reuseInterDataCTU1->partSize[ctu.m_cuAddr * numPartition];
             m_reuseMergeFlag1 = &m_reuseInterDataCTU1->mergeFlag[ctu.m_cuAddr * numPartition];
             if (m_slice->m_sliceType == P_SLICE || m_param->bIntraInBFrames)
             {
-                x265_analysis_intra_data* intraDataCTU1 = (x265_analysis_intra_data*)m_frame->m_multirateDataIn->intraData1;
+                x265_analysis_intra_data* intraDataCTU1 = (x265_analysis_intra_data*)m_frame->m_multirateDataIn1->intraData;
                 memcpy(ctu.m_refLumaDir1, &intraDataCTU1->modes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
                 memcpy(ctu.m_refChromaDir1, &intraDataCTU1->chromaModes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
             }
             if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
             {
-                m_reuseInterDataCTU2 = (x265_analysis_inter_data*)m_frame->m_multirateDataIn->interData2;
+                m_reuseInterDataCTU2 = (x265_analysis_inter_data*)m_frame->m_multirateDataIn2->interData;
                 m_reuseDepth2 = &m_reuseInterDataCTU2->depth[ctu.m_cuAddr * ctu.m_numPartitions];
                 m_reuseModes2 = &m_reuseInterDataCTU2->modes[ctu.m_cuAddr * ctu.m_numPartitions];
                 m_reusePartSize2 = &m_reuseInterDataCTU2->partSize[ctu.m_cuAddr * ctu.m_numPartitions];
                 m_reuseMergeFlag2 = &m_reuseInterDataCTU2->mergeFlag[ctu.m_cuAddr * ctu.m_numPartitions];
                 if (m_slice->m_sliceType == P_SLICE || m_param->bIntraInBFrames)
                 {
-                    x265_analysis_intra_data* intraDataCTU2 = (x265_analysis_intra_data*)m_frame->m_multirateDataIn->intraData2;
+                    x265_analysis_intra_data* intraDataCTU2 = (x265_analysis_intra_data*)m_frame->m_multirateDataIn2->intraData;
                     memcpy(ctu.m_refLumaDir2, &intraDataCTU2->modes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
                     memcpy(ctu.m_refChromaDir2, &intraDataCTU2->chromaModes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
                 }
@@ -225,14 +225,14 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
         }
         else
         {
-            x265_analysis_intra_data* intraDataCTU1 = (x265_analysis_intra_data*)m_frame->m_multirateDataIn->intraData1;
+            x265_analysis_intra_data* intraDataCTU1 = (x265_analysis_intra_data*)m_frame->m_multirateDataIn1->intraData;
             memcpy(ctu.m_refDepth1, &intraDataCTU1->depth[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
             memcpy(ctu.m_refLumaDir1, &intraDataCTU1->modes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
             memcpy(ctu.m_refPartSize1, &intraDataCTU1->partSizes[ctu.m_cuAddr * numPartition], sizeof(char) * numPartition);
             memcpy(ctu.m_refChromaDir1, &intraDataCTU1->chromaModes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
             if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
             {
-                x265_analysis_intra_data* intraDataCTU2 = (x265_analysis_intra_data*)m_frame->m_multirateDataIn->intraData2;
+                x265_analysis_intra_data* intraDataCTU2 = (x265_analysis_intra_data*)m_frame->m_multirateDataIn2->intraData;
                 memcpy(ctu.m_refDepth2, &intraDataCTU2->depth[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
                 memcpy(ctu.m_refLumaDir2, &intraDataCTU2->modes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
                 memcpy(ctu.m_refPartSize2, &intraDataCTU2->partSizes[ctu.m_cuAddr * numPartition], sizeof(char) * numPartition);

@@ -207,21 +207,7 @@ typedef struct x265_analysis_distortion_data
 #define EDGE_BINS 2
 #define MAX_HIST_BINS 1024
 
-/* Stores all multi-rate data for a single frame */
-typedef struct x265_multirate_data
-{
-    uint32_t               frameRecordSize;
-    uint32_t               poc;
-    uint32_t               sliceType;
-    uint32_t               numCUsInFrame;
-    uint32_t               numPartitions;
-    void*                  interData1;
-    void*                  interData2;
-    void*                  intraData1;
-    void*                  intraData2;
-    void*                  wt;
-} x265_multirate_data;
-
+/* Multi-rate */
 typedef enum
 {
     MULTIRATE_REUSE_LOOKAHEAD = 1,
@@ -2077,8 +2063,8 @@ void x265_alloc_analysis_data(x265_param *param, x265_analysis_data* analysis);
 void x265_free_analysis_data(x265_param *param, x265_analysis_data* analysis);
 
 /* multi-rate */
-void x265_alloc_multirate_data(x265_param *param, x265_multirate_data* refData);
-void x265_free_multirate_data(x265_param *param, x265_multirate_data* refData);
+void x265_alloc_multirate_data(x265_param *param, x265_analysis_data* refData);
+void x265_free_multirate_data(x265_param *param, x265_analysis_data* refData);
 
 /* Force a link error in the case of linking against an incompatible API version.
  * Glue #defines exist to force correct macro expansion; the final output of the macro
