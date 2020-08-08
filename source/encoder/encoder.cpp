@@ -4639,7 +4639,6 @@ void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* 
         if (m_param->rc.cuTree)
             X265_FREE(cuQPBuf);
         X265_FREE(tempBuf);
-        consumedBytes += frameRecordSize;
     }
     else
     {
@@ -4748,9 +4747,6 @@ void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* 
                 X265_FREE(tempLumaBuf);
             }
         }
-        consumedBytes += frameRecordSize;
-        if (numDir == 1)
-            totalConsumedBytes = consumedBytes;
     }
 #undef X265_FREAD
 }
