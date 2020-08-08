@@ -1391,7 +1391,8 @@ SplitData Analysis::compressInterCU_rd0_4(const CUData& parentCTU, const CUGeom&
                         checkIntraInInter(md.pred[PRED_INTRA], cuGeom);
                         encodeIntraInInter(md.pred[PRED_INTRA], cuGeom);
                         checkBestMode(md.pred[PRED_INTRA], depth);
-                        skipModes = !!md.bestMode;
+                        skipModes = true && !!md.bestMode;
+                        skipIntra = true && !!md.bestMode;
                     }
                     /* If highest quality encode PU is INTER coded, skip checking INTRA coding */
                     if (m_reuseModes1[cuGeom.absPartIdx] == MODE_INTER)
@@ -2215,7 +2216,8 @@ SplitData Analysis::compressInterCU_rd5_6(const CUData& parentCTU, const CUGeom&
                             checkIntra(md.pred[PRED_INTRA_NxN], cuGeom, SIZE_NxN);
                             checkBestMode(md.pred[PRED_INTRA_NxN], depth);
                         }
-                        skipModes = !!md.bestMode;
+                        skipModes = true && !!md.bestMode;
+                        skipIntra = true && !!md.bestMode;
                     }
                     /* If highest quality encode PU is INTER coded, skip checking INTRA coding */
                     if (m_reuseModes1[cuGeom.absPartIdx] == MODE_INTER)
