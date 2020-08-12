@@ -1438,12 +1438,6 @@ SplitData Analysis::compressInterCU_rd0_4(const CUData& parentCTU, const CUGeom&
         if ((m_limitTU & X265_TU_LIMIT_NEIGH) && cuGeom.log2CUSize >= 4)
             m_maxTUDepth = loadTUDepth(cuGeom, parentCTU);
 
-        SplitData splitData[4];
-        splitData[0].initSplitCUData();
-        splitData[1].initSplitCUData();
-        splitData[2].initSplitCUData();
-        splitData[3].initSplitCUData();
-
         // avoid uninitialize value in below reference
         if (m_param->limitModes)
         {
