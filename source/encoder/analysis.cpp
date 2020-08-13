@@ -1389,7 +1389,8 @@ SplitData Analysis::compressInterCU_rd0_4(const CUData& parentCTU, const CUGeom&
                 {
                     /* If same depth is chosen for highest quality and least quality encode,
                     if SKIP mode was chosen in highest quality, force SKIP/MERGE */
-                    if (m_reuseModes1[cuGeom.absPartIdx] == MODE_SKIP || (!!m_reuseMergeFlag1[cuGeom.absPartIdx] == !!m_reuseMergeFlag2[cuGeom.absPartIdx]))
+                    bool skipModeCheck = (m_reuseModes1[cuGeom.absPartIdx] == MODE_SKIP);
+                    if (skipModeCheck)
                     {
                         md.pred[PRED_MERGE].cu.initSubCU(parentCTU, cuGeom, qp);
                         md.pred[PRED_SKIP].cu.initSubCU(parentCTU, cuGeom, qp);
@@ -1397,16 +1398,10 @@ SplitData Analysis::compressInterCU_rd0_4(const CUData& parentCTU, const CUGeom&
                         skipModes = !!md.bestMode;
                         skipIntra = !!md.bestMode;
                     }
-
                     if (m_reusePartSize1[cuGeom.absPartIdx] == SIZE_2Nx2N && (m_reuseModes1[cuGeom.absPartIdx] != MODE_INTRA && m_reuseModes1[cuGeom.absPartIdx] != 4))
                     {
-                        skipRectAmp = true && !!md.bestMode;
+                        skipRectAmp = true;
                         chooseMerge = !!m_reuseMergeFlag1[cuGeom.absPartIdx] && !!md.bestMode;
-                    }
-                    if ((m_reusePartSize1[cuGeom.absPartIdx] == SIZE_NxN) && (m_reusePartSize2[cuGeom.absPartIdx] == SIZE_NxN))
-                    {
-                        skipRectAmp = true && !!md.bestMode;
-                        chooseMerge = (!!m_reuseMergeFlag1[cuGeom.absPartIdx] && !!m_reuseMergeFlag2[cuGeom.absPartIdx]) && !!md.bestMode;
                     }
                     /* If the highest quality encode PU and lowest quality encode PU are Intra coded,
                     check for only MERGE, SKIP, INTRA modes */
@@ -2207,7 +2202,7 @@ SplitData Analysis::compressInterCU_rd5_6(const CUData& parentCTU, const CUGeom&
                 if SKIP mode was chosen in highest quality, force SKIP/MERGE */
                 if (depth == maxPossibleDepth)
                 {
-                    if ((m_reuseModes1[cuGeom.absPartIdx] == MODE_SKIP) || (!!m_reuseMergeFlag1[cuGeom.absPartIdx] == !!m_reuseMergeFlag2[cuGeom.absPartIdx]))
+                    if (m_reuseModes1[cuGeom.absPartIdx] == MODE_SKIP)
                     {
                         md.pred[PRED_SKIP].cu.initSubCU(parentCTU, cuGeom, qp);
                         md.pred[PRED_MERGE].cu.initSubCU(parentCTU, cuGeom, qp);
@@ -2220,10 +2215,6 @@ SplitData Analysis::compressInterCU_rd5_6(const CUData& parentCTU, const CUGeom&
                         skipModes = true && !!md.bestMode;
                     }
                     if (m_reusePartSize1[cuGeom.absPartIdx] == SIZE_2Nx2N)
-                    {
-                        skipRectAmp = true;
-                    }
-                    if ((m_reusePartSize1[cuGeom.absPartIdx] == SIZE_NxN) && (m_reusePartSize2[cuGeom.absPartIdx] == SIZE_NxN))
                     {
                         skipRectAmp = true;
                     }
