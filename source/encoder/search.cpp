@@ -2206,6 +2206,11 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
         m_me.setSourcePU(*interMode.fencYuv, pu.ctuAddr, pu.cuAbsPartIdx, pu.puAbsPartIdx, pu.width, pu.height, m_param->searchMethod, m_param->subpelRefine, bChromaMC);
         useAsMVP = false;
         x265_analysis_inter_data* interDataCTU = NULL;
+
+        /* Multi-rate */
+        x265_analysis_inter_data* interDataCTU1 = NULL;
+        x265_analysis_inter_data* interDataCTU2 = NULL;
+
         int cuIdx;
         cuIdx = (interMode.cu.m_cuAddr * m_param->num4x4Partitions) + cuGeom.absPartIdx;
         if (m_param->analysisLoadReuseLevel == 10 && m_param->interRefine > 1)
@@ -2216,6 +2221,17 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
                 && !(interDataCTU->mergeFlag[cuIdx + puIdx])
                 && (cu.m_cuDepth[0] == interDataCTU->depth[cuIdx]))
                 useAsMVP = true;
+        }
+        if (m_param->mr_load & MULTIRATE_REUSE_REF_FRAME)
+        {
+            interDataCTU1 = m_frame->m_multirateDataIn1->interData;
+            interDataCTU2 = m_frame->m_multirateDataIn2->interData;
+            if ((interDataCTU1->modes[cuIdx + pu.puAbsPartIdx] == interDataCTU2->modes[cuIdx + pu.puAbsPartIdx])
+                && (interDataCTU1->partSize[cuIdx + pu.puAbsPartIdx] == interDataCTU2->partSize[cuIdx + pu.puAbsPartIdx])
+                && (!(interDataCTU1->mergeFlag[cuIdx + puIdx]) && !(interDataCTU2->mergeFlag[cuIdx + puIdx]))
+                && (interDataCTU1->depth[cuIdx] == interDataCTU2->depth[cuIdx]))
+                useAsMVP = true;
+
         }
         /* find best cost merge candidate. note: 2Nx2N merge and bidir are handled as separate modes */
         uint32_t mrgCost = numPart == 1 ? MAX_UINT : mergeEstimation(cu, cuGeom, pu, puIdx, merge);
@@ -2234,8 +2250,15 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
             {
 
                 int ref = -1;
-                if (useAsMVP)
+                if (useAsMVP && !m_param->mr_load)
                     ref = interDataCTU->refIdx[list][cuIdx + puIdx];
+                else if (useAsMVP && (m_param->mr_load & MULTIRATE_REUSE_REF_FRAME || m_param->mr_load & MULTIRATE_REUSE_MV))
+                {
+                    if (interDataCTU1->refIdx[list][cuIdx + puIdx] == interDataCTU2->refIdx[list][cuIdx + puIdx])
+                        ref = interDataCTU1->refIdx[list][cuIdx + puIdx];
+                    else
+                        ref = bestME[list].ref;
+                }
                 else
                     ref = bestME[list].ref;
                 if (ref < 0)
