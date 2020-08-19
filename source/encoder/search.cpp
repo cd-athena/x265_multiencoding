@@ -2222,7 +2222,16 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
                 && (cu.m_cuDepth[0] == interDataCTU->depth[cuIdx]))
                 useAsMVP = true;
         }
-        if (m_param->mr_load & MULTIRATE_REUSE_REF_FRAME)
+        else if ((m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_SINGLE_BOUND) && (m_param->mr_load & MULTIRATE_REUSE_MV))
+        {
+            interDataCTU1 = m_frame->m_multirateDataIn1->interData;
+            if ((cu.m_predMode[pu.puAbsPartIdx] == interDataCTU1->modes[cuIdx + pu.puAbsPartIdx])
+                && (cu.m_partSize[pu.puAbsPartIdx] == interDataCTU1->partSize[cuIdx + pu.puAbsPartIdx])
+                && !(interDataCTU1->mergeFlag[cuIdx + puIdx])
+                && (cu.m_cuDepth[0] == interDataCTU1->depth[cuIdx]))
+                useAsMVP = true;
+        }
+        else if ((m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND) && (m_param->mr_load & MULTIRATE_REUSE_MV))
         {
             interDataCTU1 = m_frame->m_multirateDataIn1->interData;
             interDataCTU2 = m_frame->m_multirateDataIn2->interData;
@@ -2252,7 +2261,9 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
                 int ref = -1;
                 if (useAsMVP && !m_param->mr_load)
                     ref = interDataCTU->refIdx[list][cuIdx + puIdx];
-                else if (useAsMVP && (m_param->mr_load & MULTIRATE_REUSE_REF_FRAME || m_param->mr_load & MULTIRATE_REUSE_MV))
+                else if (useAsMVP && (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_SINGLE_BOUND) && (m_param->mr_load & MULTIRATE_REUSE_MV))
+                    ref = interDataCTU1->refIdx[list][cuIdx + puIdx];
+                else if (useAsMVP && (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND) && (m_param->mr_load & MULTIRATE_REUSE_MV))
                 {
                     if (interDataCTU1->refIdx[list][cuIdx + puIdx] == interDataCTU2->refIdx[list][cuIdx + puIdx])
                         ref = interDataCTU1->refIdx[list][cuIdx + puIdx];
@@ -2276,6 +2287,11 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
                 {
                     mvp = interDataCTU->mv[list][cuIdx + puIdx].word;
                     mvpIdx = interDataCTU->mvpIdx[list][cuIdx + puIdx];
+                }
+                else if (useAsMVP && interDataCTU1 && !interDataCTU2)
+                {
+                    mvp = interDataCTU1->mv[list][cuIdx + puIdx].word;
+                    mvpIdx = interDataCTU1->mvpIdx[list][cuIdx + puIdx];
                 }
                 else
                     mvp = amvp[mvpIdx];
