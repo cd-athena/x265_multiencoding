@@ -2230,6 +2230,8 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
                 && !(interDataCTU1->mergeFlag[cuIdx + puIdx])
                 && (cu.m_cuDepth[0] == interDataCTU1->depth[cuIdx]))
                 useAsMVP = true;
+            if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
+                interDataCTU2 = m_frame->m_multirateDataIn2->interData;
         }
 
         /* find best cost merge candidate. note: 2Nx2N merge and bidir are handled as separate modes */
@@ -2251,15 +2253,8 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
                 int ref = -1;
                 if (useAsMVP && !m_param->mr_load)
                     ref = interDataCTU->refIdx[list][cuIdx + puIdx];
-                else if (useAsMVP && (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_SINGLE_BOUND) && (m_param->mr_load & MULTIRATE_REUSE_MV))
+                else if (useAsMVP && (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_SINGLE_BOUND || m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND) && (m_param->mr_load & MULTIRATE_REUSE_MV))
                     ref = interDataCTU1->refIdx[list][cuIdx + puIdx];
-                else if (useAsMVP && (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND) && (m_param->mr_load & MULTIRATE_REUSE_MV))
-                {
-                    if (interDataCTU1->refIdx[list][cuIdx + puIdx] == interDataCTU2->refIdx[list][cuIdx + puIdx])
-                        ref = interDataCTU1->refIdx[list][cuIdx + puIdx];
-                    else
-                        ref = bestME[list].ref;
-                }
                 else
                     ref = bestME[list].ref;
                 if (ref < 0)
