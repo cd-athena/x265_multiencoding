@@ -2222,7 +2222,7 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
                 && (cu.m_cuDepth[0] == interDataCTU->depth[cuIdx]))
                 useAsMVP = true;
         }
-        else if ((m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_SINGLE_BOUND) && (m_param->mr_load & MULTIRATE_REUSE_MV))
+        else if ((m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_SINGLE_BOUND || m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND) && (m_param->mr_load & MULTIRATE_REUSE_MV))
         {
             interDataCTU1 = m_frame->m_multirateDataIn1->interData;
             if ((cu.m_predMode[pu.puAbsPartIdx] == interDataCTU1->modes[cuIdx + pu.puAbsPartIdx])
@@ -2231,17 +2231,7 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
                 && (cu.m_cuDepth[0] == interDataCTU1->depth[cuIdx]))
                 useAsMVP = true;
         }
-        else if ((m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND) && (m_param->mr_load & MULTIRATE_REUSE_MV))
-        {
-            interDataCTU1 = m_frame->m_multirateDataIn1->interData;
-            interDataCTU2 = m_frame->m_multirateDataIn2->interData;
-            if ((interDataCTU1->modes[cuIdx + pu.puAbsPartIdx] == interDataCTU2->modes[cuIdx + pu.puAbsPartIdx])
-                && (interDataCTU1->partSize[cuIdx + pu.puAbsPartIdx] == interDataCTU2->partSize[cuIdx + pu.puAbsPartIdx])
-                && (!(interDataCTU1->mergeFlag[cuIdx + puIdx]) && !(interDataCTU2->mergeFlag[cuIdx + puIdx]))
-                && (interDataCTU1->depth[cuIdx] == interDataCTU2->depth[cuIdx]))
-                useAsMVP = true;
 
-        }
         /* find best cost merge candidate. note: 2Nx2N merge and bidir are handled as separate modes */
         uint32_t mrgCost = numPart == 1 ? MAX_UINT : mergeEstimation(cu, cuGeom, pu, puIdx, merge);
         bestME[0].cost = MAX_UINT;
@@ -2288,7 +2278,7 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
                     mvp = interDataCTU->mv[list][cuIdx + puIdx].word;
                     mvpIdx = interDataCTU->mvpIdx[list][cuIdx + puIdx];
                 }
-                else if (useAsMVP && interDataCTU1 && !interDataCTU2)
+                else if (useAsMVP && interDataCTU1)
                 {
                     mvp = interDataCTU1->mv[list][cuIdx + puIdx].word;
                     mvpIdx = interDataCTU1->mvpIdx[list][cuIdx + puIdx];
