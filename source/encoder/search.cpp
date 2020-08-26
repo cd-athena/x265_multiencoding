@@ -2293,10 +2293,14 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
                 {
                     MV mv1 = interDataCTU1->mv[list][cuIdx + puIdx].word;
                     MV mv2 = interDataCTU2->mv[list][cuIdx + puIdx].word;
-                    if ((mv1.x - mv2.x < 16 && mv1.x - mv2.x > -16) && (mv1.y - mv2.y < 16 && mv1.y - mv2.y > -16))
+                    if ((mv1.x - mv2.x < 8 && mv1.x - mv2.x > -8) && (mv1.y - mv2.y < 8 && mv1.y - mv2.y > -8))
                     {
-                        int32_t mv_range_max = X265_MIN(m_param->searchRange,(X265_MAX(mv1.x - mv2.x, mv1.y - mv2.y) + 16));
-                        setSearchRange(cu, mvp, mv_range_max, mvmin, mvmax);
+                        int32_t mv_range_max = X265_MIN(m_param->searchRange, (X265_MAX(mv1.x - mv2.x, mv1.y - mv2.y) + 8));
+                        mvmin.x = X265_MIN(mv1.x, mv2.x) - 8;
+                        mvmin.y = X265_MIN(mv1.y, mv2.y) - 8;
+                        mvmax.x = X265_MAX(mv1.x, mv2.x) + 8;
+                        mvmax.y = X265_MAX(mv1.y, mv2.y) + 8;
+                        //setSearchRange(cu, mvp, m_param->searchRange, mvmin, mvmax);
                         mvpIn = mvp;
                         satdCost = m_me.motionEstimate(&slice->m_mref[list][ref], mvmin, mvmax, mvpIn, numMvc, mvc, mv_range_max, outmv, m_param->maxSlices,
                             m_param->bSourceReferenceEstimation ? m_slice->m_refFrameList[list][ref]->m_fencPic->getLumaAddr(0) : 0);
