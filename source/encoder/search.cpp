@@ -2300,7 +2300,7 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
                         mvmin.y = X265_MIN(mv1.y, mv2.y) - 8;
                         mvmax.x = X265_MAX(mv1.x, mv2.x) + 8;
                         mvmax.y = X265_MAX(mv1.y, mv2.y) + 8;
-                        //setSearchRange(cu, mvp, m_param->searchRange, mvmin, mvmax);
+                        setSearchRangeMultiRate(cu, mvp, mv_range_max, mvmin, mvmax);
                         mvpIn = mvp;
                         satdCost = m_me.motionEstimate(&slice->m_mref[list][ref], mvmin, mvmax, mvpIn, numMvc, mvc, mv_range_max, outmv, m_param->maxSlices,
                             m_param->bSourceReferenceEstimation ? m_slice->m_refFrameList[list][ref]->m_fencPic->getLumaAddr(0) : 0);
@@ -2815,6 +2815,42 @@ void Search::setSearchRange(const CUData& cu, const MV& mvp, int merange, MV& mv
     mvmin.y = X265_MIN(mvmin.y, (int32_t)m_refLagPixels);
     mvmax.y = X265_MIN(mvmax.y, (int32_t)m_refLagPixels);
 
+    /* conditional clipping for negative mv range */
+    mvmax.y = X265_MAX(mvmax.y, mvmin.y);
+}
+
+void Search::setSearchRangeMultiRate(const CUData& cu, const MV& mvp, int merange, MV& mvmin, MV& mvmax) const
+{
+    cu.clipMv(mvmin);
+    cu.clipMv(mvmax);
+    if (cu.m_encData->m_param->bIntraRefresh && m_slice->m_sliceType == P_SLICE &&
+        cu.m_cuPelX / m_param->maxCUSize < m_frame->m_encData->m_pir.pirStartCol &&
+        m_slice->m_refFrameList[0][0]->m_encData->m_pir.pirEndCol < m_slice->m_sps->numCuInWidth)
+    {
+        int safeX, maxSafeMv;
+        safeX = m_slice->m_refFrameList[0][0]->m_encData->m_pir.pirEndCol * m_param->maxCUSize - 3;
+        maxSafeMv = (safeX - cu.m_cuPelX) * 4;
+        mvmax.x = X265_MIN(mvmax.x, maxSafeMv);
+        mvmin.x = X265_MIN(mvmin.x, maxSafeMv);
+    }
+    // apply restrict on slices
+    if ((m_param->maxSlices > 1) & m_bFrameParallel)
+    {
+        mvmin.y = X265_MAX(mvmin.y, m_sliceMinY);
+        mvmax.y = X265_MIN(mvmax.y, m_sliceMaxY);
+    }
+    /* Clip search range to signaled maximum MV length.
+    * We do not support this VUI field being changed from the default */
+    const int maxMvLen = (1 << 15) - 1;
+    mvmin.x = X265_MAX(mvmin.x, -maxMvLen);
+    mvmin.y = X265_MAX(mvmin.y, -maxMvLen);
+    mvmax.x = X265_MIN(mvmax.x, maxMvLen);
+    mvmax.y = X265_MIN(mvmax.y, maxMvLen);
+    mvmin >>= 2;
+    mvmax >>= 2;
+    /* conditional clipping for frame parallelism */
+    mvmin.y = X265_MIN(mvmin.y, (int32_t)m_refLagPixels);
+    mvmax.y = X265_MIN(mvmax.y, (int32_t)m_refLagPixels);
     /* conditional clipping for negative mv range */
     mvmax.y = X265_MAX(mvmax.y, mvmin.y);
 }
