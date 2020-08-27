@@ -2225,9 +2225,7 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
         else if ((m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_SINGLE_BOUND || m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND) && (m_param->mr_load & MULTIRATE_REUSE_MV))
         {
             interDataCTU1 = m_frame->m_multirateDataIn1->interData;
-            if ((cu.m_predMode[pu.puAbsPartIdx] == interDataCTU1->modes[cuIdx + pu.puAbsPartIdx])
-                && (cu.m_partSize[pu.puAbsPartIdx] == interDataCTU1->partSize[cuIdx + pu.puAbsPartIdx])
-                && !(interDataCTU1->mergeFlag[cuIdx + puIdx])
+            if ((cu.m_partSize[pu.puAbsPartIdx] == interDataCTU1->partSize[cuIdx + pu.puAbsPartIdx])
                 && (cu.m_cuDepth[0] == interDataCTU1->depth[cuIdx]))
                 useAsMVP = true;
             if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
