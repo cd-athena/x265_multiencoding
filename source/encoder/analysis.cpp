@@ -352,6 +352,41 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
             qprdRefine (ctu, cuGeom, qp, qp);
             return *m_modeDepth[0].bestMode;
         }
+        else if (m_param->mr_load & MULTIRATE_FAST_MODE)
+        {
+            x265_analysis_inter_data* interDataCTU1 = m_frame->m_multirateDataIn1->interData;
+            x265_analysis_inter_data* interDataCTU2 = m_frame->m_multirateDataIn2->interData;
+            uint8_t cuDepthArray1[256] = { 0 };
+            uint8_t cuDepthArray2[256] = { 0 };
+            int posCTU = ctu.m_cuAddr * numPartition;
+            memcpy(cuDepthArray1, &interDataCTU1->depth[posCTU], sizeof(uint8_t) * numPartition);
+            memcpy(cuDepthArray2, &interDataCTU2->depth[posCTU], sizeof(uint8_t) * numPartition);
+            if (!memcmp(cuDepthArray1, cuDepthArray2, sizeof(uint8_t) * 256))
+            {
+                memcpy(ctu.m_cuDepth, &interDataCTU1->depth[posCTU], sizeof(uint8_t) * numPartition);
+                memcpy(ctu.m_predMode, &interDataCTU1->modes[posCTU], sizeof(uint8_t) * numPartition);
+                memcpy(ctu.m_partSize, &interDataCTU1->partSize[posCTU], sizeof(uint8_t) * numPartition);
+                if (m_slice->m_sliceType == P_SLICE || m_param->bIntraInBFrames)
+                {
+                    x265_analysis_intra_data* intraDataCTU = m_frame->m_multirateDataIn1->intraData;
+                    memcpy(ctu.m_lumaIntraDir, &intraDataCTU->modes[posCTU], sizeof(uint8_t) * numPartition);
+                    memcpy(ctu.m_chromaIntraDir, &intraDataCTU->chromaModes[posCTU], sizeof(uint8_t) * numPartition);
+                }
+                for (uint32_t i = 0; i < cuGeom.numPartitions; i++)
+                    ctu.m_log2CUSize[i] = (uint8_t)m_param->maxLog2CUSize - ctu.m_cuDepth[i];
+                qprdRefine(ctu, cuGeom, qp, qp);
+                return *m_modeDepth[0].bestMode;
+            }
+            else
+            {
+                if (m_param->bDistributeModeAnalysis && m_param->rdLevel >= 2)
+                    compressInterCU_dist(ctu, cuGeom, qp);
+                else if (m_param->rdLevel <= 4)
+                    compressInterCU_rd0_4(ctu, cuGeom, qp);
+                else
+                    compressInterCU_rd5_6(ctu, cuGeom, qp);
+            }
+        }
         else if (m_param->bDistributeModeAnalysis && m_param->rdLevel >= 2)
             compressInterCU_dist(ctu, cuGeom, qp);
         else if (m_param->rdLevel <= 4)
@@ -2784,7 +2819,7 @@ void Analysis::recodeCU(const CUData& parentCTU, const CUGeom& cuGeom, int32_t q
         md.bestMode = &mode;
         mode.cu.initSubCU(parentCTU, cuGeom, qp);
         PartSize size = (PartSize)parentCTU.m_partSize[cuGeom.absPartIdx];
-        if (parentCTU.isIntra(cuGeom.absPartIdx) && m_refineLevel < 2)
+        if (!(m_param->mr_load & MULTIRATE_FAST_MODE) && parentCTU.isIntra(cuGeom.absPartIdx) && m_refineLevel < 2)
         {
             if (m_param->intraRefine == 4)
                 compressIntraCU(parentCTU, cuGeom, qp);
@@ -2799,6 +2834,10 @@ void Analysis::recodeCU(const CUData& parentCTU, const CUGeom& cuGeom, int32_t q
                 }
                 checkIntra(mode, cuGeom, size);
             }
+        }
+        else if ((m_param->mr_load & MULTIRATE_FAST_MODE) && parentCTU.isIntra(cuGeom.absPartIdx))
+        {
+            compressIntraCU(parentCTU, cuGeom, qp);
         }
         else if (!parentCTU.isIntra(cuGeom.absPartIdx) && m_refineLevel < 2)
         {
@@ -2843,6 +2882,72 @@ void Analysis::recodeCU(const CUData& parentCTU, const CUGeom& cuGeom, int32_t q
                                 {
                                     mvpSelect[1] = mvp;
                                     if(m_param->mvRefine > 2)
+                                        mvpSelect[2] = mode.amvpCand[list][ref][!(mode.cu.m_mvpIdx[list][pu.puAbsPartIdx])];
+                                }
+                                searchMV(mode, list, ref, outmv, mvpSelect, numMvc, mvc);
+                                mode.cu.setPUMv(list, outmv, pu.puAbsPartIdx, part);
+                            }
+                            mode.cu.m_mvd[list][pu.puAbsPartIdx] = mode.cu.m_mv[list][pu.puAbsPartIdx] - mode.amvpCand[list][ref][mode.cu.m_mvpIdx[list][pu.puAbsPartIdx]]/*mvp*/;
+                        }
+                    }
+                    else
+                    {
+                        MVField candMvField[MRG_MAX_NUM_CANDS][2]; // double length for mv of both lists
+                        uint8_t candDir[MRG_MAX_NUM_CANDS];
+                        mode.cu.getInterMergeCandidates(pu.puAbsPartIdx, part, candMvField, candDir);
+                        uint8_t mvpIdx = mode.cu.m_mvpIdx[0][pu.puAbsPartIdx];
+                        if (mode.cu.isBipredRestriction())
+                        {
+                            /* do not allow bidir merge candidates if PU is smaller than 8x8, drop L1 reference */
+                            if (candDir[mvpIdx] == 3)
+                            {
+                                candDir[mvpIdx] = 1;
+                                candMvField[mvpIdx][1].refIdx = REF_NOT_VALID;
+                            }
+                        }
+                        mode.cu.setPUInterDir(candDir[mvpIdx], pu.puAbsPartIdx, part);
+                        mode.cu.setPUMv(0, candMvField[mvpIdx][0].mv, pu.puAbsPartIdx, part);
+                        mode.cu.setPUMv(1, candMvField[mvpIdx][1].mv, pu.puAbsPartIdx, part);
+                        mode.cu.setPURefIdx(0, (int8_t)candMvField[mvpIdx][0].refIdx, pu.puAbsPartIdx, part);
+                        mode.cu.setPURefIdx(1, (int8_t)candMvField[mvpIdx][1].refIdx, pu.puAbsPartIdx, part);
+                    }
+                }
+                else if (m_param->mr_load & MULTIRATE_FAST_MODE)
+                {
+                    x265_analysis_inter_data* interDataCTU = m_frame->m_multirateDataIn1->interData;
+                    int cuIdx = (mode.cu.m_cuAddr * parentCTU.m_numPartitions) + cuGeom.absPartIdx;
+                    mode.cu.m_mergeFlag[pu.puAbsPartIdx] = interDataCTU->mergeFlag[cuIdx + part];
+                    mode.cu.setPUInterDir(interDataCTU->interDir[cuIdx + part], pu.puAbsPartIdx, part);
+                    for (int list = 0; list < m_slice->isInterB() + 1; list++)
+                    {
+                        mode.cu.setPUMv(list, interDataCTU->mv[list][cuIdx + part].word, pu.puAbsPartIdx, part);
+                        mode.cu.setPURefIdx(list, interDataCTU->refIdx[list][cuIdx + part], pu.puAbsPartIdx, part);
+                        mode.cu.m_mvpIdx[list][pu.puAbsPartIdx] = interDataCTU->mvpIdx[list][cuIdx + part];
+                    }
+                    if (!mode.cu.m_mergeFlag[pu.puAbsPartIdx])
+                    {
+                        if (m_param->interRefine == 1)
+                            m_me.setSourcePU(*mode.fencYuv, pu.ctuAddr, pu.cuAbsPartIdx, pu.puAbsPartIdx, pu.width, pu.height, m_param->searchMethod, m_param->subpelRefine, false);
+                        //AMVP
+                        MV mvc[(MD_ABOVE_LEFT + 1) * 2 + 2];
+                        mode.cu.getNeighbourMV(part, pu.puAbsPartIdx, mode.interNeighbours);
+                        for (int list = 0; list < m_slice->isInterB() + 1; list++)
+                        {
+                            int ref = mode.cu.m_refIdx[list][pu.puAbsPartIdx];
+                            if (ref == -1)
+                                continue;
+                            MV mvp;
+
+                            int numMvc = mode.cu.getPMV(mode.interNeighbours, list, ref, mode.amvpCand[list][ref], mvc);
+                            mvp = mode.amvpCand[list][ref][mode.cu.m_mvpIdx[list][pu.puAbsPartIdx]];
+                            if (m_param->interRefine == 1)
+                            {
+                                MV outmv, mvpSelect[3];
+                                mvpSelect[0] = interDataCTU->mv[list][cuIdx + part].word;
+                                if (m_param->mvRefine > 1)
+                                {
+                                    mvpSelect[1] = mvp;
+                                    if (m_param->mvRefine > 2)
                                         mvpSelect[2] = mode.amvpCand[list][ref][!(mode.cu.m_mvpIdx[list][pu.puAbsPartIdx])];
                                 }
                                 searchMV(mode, list, ref, outmv, mvpSelect, numMvc, mvc);

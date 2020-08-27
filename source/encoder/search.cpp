@@ -2300,7 +2300,7 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
                         mvmin.y = X265_MIN(mv1.y, mv2.y) - 8;
                         mvmax.x = X265_MAX(mv1.x, mv2.x) + 8;
                         mvmax.y = X265_MAX(mv1.y, mv2.y) + 8;
-                        setSearchRangeMultiRate(cu, mvp, mv_range_max, mvmin, mvmax);
+                        setSearchRangeMultiRate(cu, mvmin, mvmax);
                         mvpIn = mvp;
                         satdCost = m_me.motionEstimate(&slice->m_mref[list][ref], mvmin, mvmax, mvpIn, numMvc, mvc, mv_range_max, outmv, m_param->maxSlices,
                             m_param->bSourceReferenceEstimation ? m_slice->m_refFrameList[list][ref]->m_fencPic->getLumaAddr(0) : 0);
@@ -2819,7 +2819,7 @@ void Search::setSearchRange(const CUData& cu, const MV& mvp, int merange, MV& mv
     mvmax.y = X265_MAX(mvmax.y, mvmin.y);
 }
 
-void Search::setSearchRangeMultiRate(const CUData& cu, const MV& mvp, int merange, MV& mvmin, MV& mvmax) const
+void Search::setSearchRangeMultiRate(const CUData& cu, MV& mvmin, MV& mvmax) const
 {
     cu.clipMv(mvmin);
     cu.clipMv(mvmax);

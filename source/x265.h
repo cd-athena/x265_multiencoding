@@ -215,6 +215,7 @@ typedef enum
     MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND = 4,
     MULTIRATE_REUSE_PREDICTION_MODES = 8,
     MULTIRATE_REUSE_MV = 16,
+    MULTIRATE_FAST_MODE = 32,
 } MultirateLoadType;
 
 /* Stores all analysis data for a single frame */

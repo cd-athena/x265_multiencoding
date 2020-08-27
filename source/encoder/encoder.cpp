@@ -4505,6 +4505,12 @@ void Encoder::configure(x265_param *p)
        x265_log(p, X265_LOG_WARNING, "using  default threshold %.2lf for scene cut detection\n", p->edgeTransitionThreshold);
    }
 
+   if (p->mr_load & MULTIRATE_FAST_MODE)
+   {
+       p->mr_load = p->mr_load | MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND;
+       p->mr_load = p->mr_load | MULTIRATE_REUSE_PREDICTION_MODES;
+       p->mr_load = p->mr_load | MULTIRATE_REUSE_MV;
+   }
 }
 
 void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* fp)
