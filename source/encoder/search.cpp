@@ -2222,7 +2222,7 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
                 && (cu.m_cuDepth[0] == interDataCTU->depth[cuIdx]))
                 useAsMVP = true;
         }
-        else if ((m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_SINGLE_BOUND || m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND) && (m_param->mr_load & MULTIRATE_REUSE_MV))
+        else if ((m_param->mr_load & MULTIRATE_CU_TREE_LOWER_SINGLE_BOUND || m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND) && (m_param->mr_load & MULTIRATE_REUSE_MV))
         {
             interDataCTU1 = m_frame->m_multirateDataIn1->interData;
             if ((cu.m_partSize[pu.puAbsPartIdx] == interDataCTU1->partSize[cuIdx + pu.puAbsPartIdx])
@@ -2247,11 +2247,10 @@ void Search::predInterSearch(Mode& interMode, const CUGeom& cuGeom, bool bChroma
         {
             for (int list = 0; list < numPredDir; list++)
             {
-
                 int ref = -1;
                 if (useAsMVP && !m_param->mr_load)
                     ref = interDataCTU->refIdx[list][cuIdx + puIdx];
-                else if (useAsMVP && (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_SINGLE_BOUND || m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND) && (m_param->mr_load & MULTIRATE_REUSE_MV))
+                else if (useAsMVP && (m_param->mr_load & MULTIRATE_CU_TREE_LOWER_SINGLE_BOUND || m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND) && (m_param->mr_load & MULTIRATE_REUSE_MV))
                     ref = interDataCTU1->refIdx[list][cuIdx + puIdx];
                 else
                     ref = bestME[list].ref;
