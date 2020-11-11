@@ -1349,14 +1349,27 @@ SplitData Analysis::compressInterCU_rd0_4(const CUData& parentCTU, const CUGeom&
 
         bool skipIntra = false;
         // stop recursion based on MR reference depth
-        if (m_param->mr_load & MULTIRATE_CU_TREE_LOWER_SINGLE_BOUND)
+        if (m_param->mr_load & MULTIRATE_CU_TREE_LOWER_SINGLE_BOUND || m_param->mr_load & MULTIRATE_CU_TREE_UPPER_SINGLE_BOUND)
         {
             uint8_t refDepth = m_reuseDepth1[cuGeom.absPartIdx];
-            if (depth >= minDepth && depth >= refDepth)
+            if (m_param->mr_load & MULTIRATE_CU_TREE_LOWER_SINGLE_BOUND)
             {
-                mightSplit = false;
-                mightNotSplit = true;
-                skipRecursion = true;
+                if (depth >= minDepth && depth >= refDepth)
+                {
+                    mightSplit = false;
+                    mightNotSplit = true;
+                    skipRecursion = true;
+                }
+            }
+            if (m_param->mr_load & MULTIRATE_CU_TREE_UPPER_SINGLE_BOUND)
+            {
+                if (depth < refDepth)
+                {
+                    mightSplit = true;
+                    mightNotSplit = false;
+                    skipRecursion = false;
+                    skipModes = true;
+                }
             }
             if (m_param->mr_load & MULTIRATE_REUSE_PREDICTION_MODES)
             {
@@ -1382,17 +1395,6 @@ SplitData Analysis::compressInterCU_rd0_4(const CUData& parentCTU, const CUGeom&
                         skipIntra = true;
                     }
                 }
-            }
-        }
-        if (m_param->mr_load & MULTIRATE_CU_TREE_UPPER_SINGLE_BOUND)
-        {
-            uint8_t refDepth = m_reuseDepth1[cuGeom.absPartIdx];
-            if (depth < refDepth)
-            {
-                mightSplit = true;
-                mightNotSplit = false;
-                skipRecursion = false;
-                skipModes = true;
             }
         }
         if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
@@ -2170,14 +2172,27 @@ SplitData Analysis::compressInterCU_rd5_6(const CUData& parentCTU, const CUGeom&
         uint32_t refMasks[2];
 
         // stop recursion based on MR reference depth
-        if (m_param->mr_load & MULTIRATE_CU_TREE_LOWER_SINGLE_BOUND)
+        if (m_param->mr_load & MULTIRATE_CU_TREE_LOWER_SINGLE_BOUND || m_param->mr_load & MULTIRATE_CU_TREE_UPPER_SINGLE_BOUND)
         {
             uint8_t refDepth = m_reuseDepth1[cuGeom.absPartIdx];
-            if (depth >= refDepth)
+            if (m_param->mr_load & MULTIRATE_CU_TREE_LOWER_SINGLE_BOUND)
             {
-                mightSplit = false;
-                mightNotSplit = true;
-                skipRecursion = true;
+                if (depth >= refDepth)
+                {
+                    mightSplit = false;
+                    mightNotSplit = true;
+                    skipRecursion = true;
+                }
+            }
+            if (m_param->mr_load & MULTIRATE_CU_TREE_UPPER_SINGLE_BOUND)
+            {
+                if (depth < refDepth)
+                {
+                    mightSplit = true;
+                    mightNotSplit = false;
+                    skipRecursion = false;
+                    skipModes = true;
+                }
             }
             if (m_param->mr_load & MULTIRATE_REUSE_PREDICTION_MODES)
             {
@@ -2206,17 +2221,6 @@ SplitData Analysis::compressInterCU_rd5_6(const CUData& parentCTU, const CUGeom&
                         skipIntra = true;
                     }
                 }
-            }
-        }
-        if (m_param->mr_load & MULTIRATE_CU_TREE_UPPER_SINGLE_BOUND)
-        {
-            uint8_t refDepth = m_reuseDepth1[cuGeom.absPartIdx];
-            if (depth < refDepth)
-            {
-                mightSplit = true;
-                mightNotSplit = false;
-                skipRecursion = false;
-                skipModes = true;
             }
         }
         if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
