@@ -4610,7 +4610,7 @@ void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* 
         for (uint32_t d = 0; d < depthBytes; d++)
         {
             int bytes = analysis->numPartitions >> (depthBuf[d] * 2);
-            if (m_param->scaleFactor)
+            if (m_param->scaleFactor && !m_param->mr_load)
             {
                 if (depthBuf[d] == 0)
                     depthBuf[d] = 1;
@@ -4689,14 +4689,14 @@ void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* 
         for (uint32_t d = 0; d < depthBytes; d++)
         {
             int bytes = analysis->numPartitions >> (depthBuf[d] * 2);
-            if (m_param->scaleFactor && modeBuf[d] == MODE_INTRA && depthBuf[d] == 0)
+            if (m_param->scaleFactor && !m_param->mr_load && modeBuf[d] == MODE_INTRA && depthBuf[d] == 0)
                 depthBuf[d] = 1;
             memset(&(analysis->interData)->depth[count], depthBuf[d], bytes);
             memset(&(analysis->interData)->modes[count], modeBuf[d], bytes);
             if (m_param->rc.cuTree)
                 memset(&(analysis->interData)->cuQPOff[count], cuQPBuf[d], bytes);
 
-            if (m_param->scaleFactor && modeBuf[d] == MODE_INTRA && partSize[d] == SIZE_NxN)
+            if (m_param->scaleFactor && !m_param->mr_load && modeBuf[d] == MODE_INTRA && partSize[d] == SIZE_NxN)
                 partSize[d] = SIZE_2Nx2N;
             memset(&(analysis->interData)->partSize[count], partSize[d], bytes);
             int numPU = (modeBuf[d] == MODE_INTRA) ? 1 : nbPartsTable[(int)partSize[d]];
