@@ -383,6 +383,8 @@ public:
 
     void copyPicture(x265_picture *dest, const x265_picture *src);
 
+    bool compute_weighted_DCT_energy(x265_picture *pic);
+
     bool computeHistograms(x265_picture *pic);
     void computeHistogramSAD(double *maxUVNormalizedSAD, double *edgeNormalizedSAD, int curPoc);
     double normalizeRange(int32_t value, int32_t minValue, int32_t maxValue, double rangeStart, double rangeEnd);

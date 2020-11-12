@@ -1443,6 +1443,165 @@ void Encoder::copyPicture(x265_picture *dest, const x265_picture *src)
     dest->planes[2] = (char*)dest->planes[1] + src->stride[1] * (src->height >> x265_cli_csps[src->colorSpace].height[1]);
 }
 
+bool Encoder::compute_weighted_DCT_energy(x265_picture *pic)
+{
+    pixel *src = NULL, *planeV = NULL, *planeU = NULL;
+    uint32_t widthC, heightC;
+    int hshift, vshift;
+
+    hshift = CHROMA_H_SHIFT(pic->colorSpace);
+    vshift = CHROMA_V_SHIFT(pic->colorSpace);
+    widthC = pic->width >> hshift;
+    heightC = pic->height >> vshift;
+
+    if (pic->bitDepth == X265_DEPTH)
+    {
+        src = (pixel*)pic->planes[0];
+        if (m_param->internalCsp != X265_CSP_I400)
+        {
+            planeU = (pixel*)pic->planes[1];
+            planeV = (pixel*)pic->planes[2];
+        }
+    }
+    else if (pic->bitDepth == 8 && X265_DEPTH > 8)
+    {
+        int shift = (X265_DEPTH - 8);
+        uint8_t *yChar, *uChar, *vChar;
+
+        yChar = (uint8_t*)pic->planes[0];
+        primitives.planecopy_cp(yChar, pic->stride[0] / sizeof(*yChar), m_inputPic[0], pic->stride[0] / sizeof(*yChar), pic->width, pic->height, shift);
+        src = m_inputPic[0];
+        if (m_param->internalCsp != X265_CSP_I400)
+        {
+            uChar = (uint8_t*)pic->planes[1];
+            vChar = (uint8_t*)pic->planes[2];
+            primitives.planecopy_cp(uChar, pic->stride[1] / sizeof(*uChar), m_inputPic[1], pic->stride[1] / sizeof(*uChar), widthC, heightC, shift);
+            primitives.planecopy_cp(vChar, pic->stride[2] / sizeof(*vChar), m_inputPic[2], pic->stride[2] / sizeof(*vChar), widthC, heightC, shift);
+            planeU = m_inputPic[1];
+            planeV = m_inputPic[2];
+        }
+    }
+    else
+    {
+        uint16_t *yShort, *uShort, *vShort;
+        /* mask off bits that are supposed to be zero */
+        uint16_t mask = (1 << X265_DEPTH) - 1;
+        int shift = abs(pic->bitDepth - X265_DEPTH);
+
+        yShort = (uint16_t*)pic->planes[0];
+        uShort = (uint16_t*)pic->planes[1];
+        vShort = (uint16_t*)pic->planes[2];
+
+        if (pic->bitDepth > X265_DEPTH)
+        {
+            /* shift right and mask pixels to final size */
+            primitives.planecopy_sp(yShort, pic->stride[0] / sizeof(*yShort), m_inputPic[0], pic->stride[0] / sizeof(*yShort), pic->width, pic->height, shift, mask);
+            if (m_param->internalCsp != X265_CSP_I400)
+            {
+                primitives.planecopy_sp(uShort, pic->stride[1] / sizeof(*uShort), m_inputPic[1], pic->stride[1] / sizeof(*uShort), widthC, heightC, shift, mask);
+                primitives.planecopy_sp(vShort, pic->stride[2] / sizeof(*vShort), m_inputPic[2], pic->stride[2] / sizeof(*vShort), widthC, heightC, shift, mask);
+            }
+        }
+        else /* Case for (pic.bitDepth < X265_DEPTH) */
+        {
+            /* shift left and mask pixels to final size */
+            primitives.planecopy_sp_shl(yShort, pic->stride[0] / sizeof(*yShort), m_inputPic[0], pic->stride[0] / sizeof(*yShort), pic->width, pic->height, shift, mask);
+            if (m_param->internalCsp != X265_CSP_I400)
+            {
+                primitives.planecopy_sp_shl(uShort, pic->stride[1] / sizeof(*uShort), m_inputPic[1], pic->stride[1] / sizeof(*uShort), widthC, heightC, shift, mask);
+                primitives.planecopy_sp_shl(vShort, pic->stride[2] / sizeof(*vShort), m_inputPic[2], pic->stride[2] / sizeof(*vShort), widthC, heightC, shift, mask);
+            }
+        }
+
+        src = m_inputPic[0];
+        planeU = m_inputPic[1];
+        planeV = m_inputPic[2];
+    }
+
+    uint32_t maxBlockSize = 32;
+    uint32_t numCuInWidth = (m_param->sourceWidth + maxBlockSize - 1) / maxBlockSize;
+    uint32_t numCuInHeight = (m_param->sourceHeight + maxBlockSize - 1) / maxBlockSize;
+    uint32_t numCuInFrame = numCuInWidth * numCuInHeight;
+    uint32_t lumaMarginX = maxBlockSize + 32;
+    //uint32_t lumaMarginY = maxBlockSize + 16;
+    //uint32_t height = (numCuInHeight * maxBlockSize) + (lumaMarginY << 1);
+    int maxHeight = numCuInHeight * maxBlockSize;
+    int maxWidth = numCuInWidth * maxBlockSize;
+    double *weightedSumMat = X265_MALLOC(double, numCuInFrame);
+    intptr_t yuvstride = (numCuInWidth * maxBlockSize) + (lumaMarginX << 1);
+    for (int blockX = 0, ctuIdx = 0; blockX < maxWidth; blockX += maxBlockSize)
+    {
+        for (int blockY = 0; blockY < maxHeight; blockY += maxBlockSize, ctuIdx++)
+        {
+            intptr_t blockOffsetLuma = blockX + (blockY * yuvstride);
+            pixel * src1 = src + blockOffsetLuma;
+            int16_t * srcCoeff = X265_MALLOC(int16_t, maxBlockSize * maxBlockSize);
+            for (uint32_t p = 0; p < maxBlockSize; p++)
+            {
+                for (uint32_t q = 0; q < maxBlockSize; q++)
+                {
+                    srcCoeff[p * maxBlockSize + q] = (int16_t)src1[p * yuvstride + q];
+                }
+            }
+            int16_t * dctCoeff = X265_MALLOC(int16_t, maxBlockSize * maxBlockSize);
+            double *weightedDCTCoeff = X265_MALLOC(double, maxBlockSize * maxBlockSize);
+            primitives.cu[3].dct(srcCoeff, dctCoeff, maxBlockSize);
+            double weightedSum = 0;
+            for (uint32_t p = 0; p < maxBlockSize; p++)
+            {
+                for (uint32_t q = 0; q < maxBlockSize; q++)
+                {
+                    if (p + q <= 1)
+                    {
+                        weightedDCTCoeff[p * maxBlockSize + q] = 0;
+                    }
+                    else
+                    {
+                        weightedDCTCoeff[p * maxBlockSize + q] = exp((((double)(p - 1) * (q - 1) / (maxBlockSize * maxBlockSize)) * ((double)(p - 1) * (q - 1) / (maxBlockSize * maxBlockSize))) - 1) * abs((double)dctCoeff[p * maxBlockSize + q]);
+                        weightedSum += weightedDCTCoeff[p * maxBlockSize + q];
+                    }
+                }
+            }
+            weightedSumMat[ctuIdx] = weightedSum;
+            X265_FREE(srcCoeff);
+            X265_FREE(dctCoeff);
+            X265_FREE(weightedDCTCoeff);
+        }
+    }
+
+    //Normalise the energy
+    double energySum = 0.0;
+    for (uint32_t p = 0; p < numCuInWidth; p++)
+    {
+        for (uint32_t q = 0; q < numCuInHeight; q++)
+        {
+            energySum += weightedSumMat[p + q * numCuInWidth]/1000;
+        }
+    }
+
+    //for (int p = 0; p < numCuInWidth; p++)
+    //{
+    //    for (int q = 0; q < numCuInHeight; q++)
+    //    {
+    //        weightedSumMat[p + q * numCuInWidth] /= (energySum / 1000);
+    //    }
+    //}
+
+    FILE * fp = fopen("energy.txt", "a+");
+    fprintf(fp, "%f\n", energySum);
+
+    //for (int p = 0; p < numCuInHeight; p++)
+    //{
+    //    for (int q = 0; q < numCuInWidth; q++)
+    //    {
+    //        fprintf(fp, "%f\t", weightedSumMat[q + p * numCuInWidth]);
+    //    }
+    //    fprintf(fp, "\n");
+    //}
+    X265_FREE(weightedSumMat);
+    return true;
+}
+
 bool Encoder::computeHistograms(x265_picture *pic)
 {
     pixel *src = NULL, *planeV = NULL, *planeU = NULL;
@@ -1695,6 +1854,22 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
     }
     if ((pic_in && (!m_param->chunkEnd || (m_encodedFrameNum < m_param->chunkEnd))) || (m_param->bEnableFrameDuplication && !pic_in && (read < written)))
     {
+        if (m_param->bDCTbasedSceneCut && pic_in)
+        {
+            x265_picture *pic = (x265_picture *)pic_in;
+            if (pic->poc == 0)
+            {
+                /* for entire encode compute the chroma plane sizes only once */
+                for (int i = 1; i < x265_cli_csps[m_param->internalCsp].planes; i++)
+                    m_planeSizes[i] = (pic->width >> x265_cli_csps[m_param->internalCsp].width[i]) * (pic->height >> x265_cli_csps[m_param->internalCsp].height[i]);
+            }
+            if (compute_weighted_DCT_energy(pic))
+            {
+                // to add here
+                int t = 0; t++;
+            }
+        }
+
         if (m_param->bHistBasedSceneCut && pic_in)
         {
             x265_picture *pic = (x265_picture *) pic_in;

@@ -1890,6 +1890,9 @@ typedef struct x265_param
     /* Enables histogram based scenecut detection algorithm to detect scenecuts. Default disabled */
     int       bHistBasedSceneCut;
 
+    /* Enables DCT based scenecut detection algorithm to detect scenecuts. Default disabled */
+    int       bDCTbasedSceneCut;
+
     /* Enable HME search ranges for L0, L1 and L2 respectively. */
     int       hmeRange[3];
 

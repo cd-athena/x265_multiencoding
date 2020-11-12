@@ -1208,6 +1208,7 @@ int RateControl::rateControlSliceType(int frameNum)
             m_param->bFrameAdaptive = 0;
             m_param->scenecutThreshold = 0;
             m_param->bHistBasedSceneCut = 0;
+            m_param->bDCTbasedSceneCut = 0;
             m_param->rc.cuTree = 0;
             if (m_param->bframes > 1)
                 m_param->bframes = 1;
