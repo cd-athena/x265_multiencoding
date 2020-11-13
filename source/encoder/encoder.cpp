@@ -1551,13 +1551,13 @@ bool Encoder::compute_weighted_DCT_energy(x265_picture *pic)
             {
                 for (uint32_t q = 0; q < maxBlockSize; q++)
                 {
-                    if (p + q <= 1)
+                    if ((p == 0) && (q == 0))
                     {
-                        weightedDCTCoeff[p * maxBlockSize + q] = 0;
+                        weightedDCTCoeff[p * maxBlockSize + q] = 0; /* We discard the DC component */
                     }
                     else
                     {
-                        weightedDCTCoeff[p * maxBlockSize + q] = exp((((double)(p - 1) * (q - 1) / (maxBlockSize * maxBlockSize)) * ((double)(p - 1) * (q - 1) / (maxBlockSize * maxBlockSize))) - 1) * abs((double)dctCoeff[p * maxBlockSize + q]);
+                        weightedDCTCoeff[p * maxBlockSize + q] = exp((((double)(p + 1) * (q + 1) / (maxBlockSize * maxBlockSize)) * ((double)(p + 1) * (q + 1) / (maxBlockSize * maxBlockSize))) - 1) * abs((double)dctCoeff[p * maxBlockSize + q]);
                         weightedSum += weightedDCTCoeff[p * maxBlockSize + q];
                     }
                 }
@@ -1587,7 +1587,7 @@ bool Encoder::compute_weighted_DCT_energy(x265_picture *pic)
     //    }
     //}
 
-    FILE * fp = fopen("energy.txt", "a+");
+    FILE * fp = fopen("energy.csv", "a+");
     fprintf(fp, "%f\n", energySum);
 
     //for (int p = 0; p < numCuInHeight; p++)
