@@ -145,7 +145,7 @@ static const struct option long_options[] =
     { "scenecut-bias",  required_argument, NULL, 0 },
     { "hist-scenecut",        no_argument, NULL, 0},
     { "no-hist-scenecut",     no_argument, NULL, 0},
-    { "dct-scenecut",        no_argument, NULL, 0 },
+    { "dct-texture",        no_argument, NULL, 0 },
     { "hist-threshold", required_argument, NULL, 0},
     { "fades",                no_argument, NULL, 0 },
     { "no-fades",             no_argument, NULL, 0 },

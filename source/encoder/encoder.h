@@ -383,7 +383,7 @@ public:
 
     void copyPicture(x265_picture *dest, const x265_picture *src);
 
-    bool compute_weighted_DCT_energy(x265_picture *pic);
+    bool compute_weighted_DCT_energy(x265_picture *pic, x265_frame_texture_t *m_texture);
 
     bool computeHistograms(x265_picture *pic);
     void computeHistogramSAD(double *maxUVNormalizedSAD, double *edgeNormalizedSAD, int curPoc);

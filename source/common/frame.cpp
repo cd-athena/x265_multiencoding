@@ -150,11 +150,12 @@ bool Frame::create(x265_param *param, float* quantOffsets)
 
     if (param->bDCTtexture)
     {
+        CHECKED_MALLOC_ZERO(m_frame_texture, x265_frame_texture_t, 1);
         uint32_t widthInCTU = (m_param->sourceWidth + param->maxCUSize - 1) >> m_param->maxLog2CUSize;
         uint32_t heightInCTU = (m_param->sourceHeight + param->maxCUSize - 1) >> m_param->maxLog2CUSize;
         uint32_t numCTUsInFrame = widthInCTU * heightInCTU;
-        CHECKED_MALLOC_ZERO(m_frame_texture->m_ctuAbsoluteEnergy, int64_t, numCTUsInFrame);
-        CHECKED_MALLOC_ZERO(m_frame_texture->m_ctuRelativeEnergy, int64_t, numCTUsInFrame);
+        CHECKED_MALLOC_ZERO(m_frame_texture->m_ctuAbsoluteEnergy, int32_t, numCTUsInFrame);
+        CHECKED_MALLOC_ZERO(m_frame_texture->m_ctuRelativeEnergy, double, numCTUsInFrame);
     }
 
     if (m_fencPic->create(param, !!m_param->bCopyPicToFrame) && m_lowres.create(param, m_fencPic, param->rc.qgSize))
@@ -321,4 +322,10 @@ void Frame::destroy()
     X265_FREE(m_multirateDataIn2);
     X265_FREE(m_multirateDataOut);
 
+    if (m_param->bDCTtexture)
+    {
+        X265_FREE(m_frame_texture->m_ctuAbsoluteEnergy);
+        X265_FREE(m_frame_texture->m_ctuRelativeEnergy);
+        X265_FREE(m_frame_texture);
+    }
 }

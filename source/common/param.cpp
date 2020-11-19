@@ -170,7 +170,7 @@ void x265_param_default(x265_param* param)
     param->scenecutThreshold = 40; /* Magic number pulled in from x264 */
     param->edgeTransitionThreshold = 0.03;
     param->bHistBasedSceneCut = 0;
-    param->bDCTbasedSceneCut = 0;
+    param->bDCTtexture = 0;
     param->lookaheadSlices = 8;
     param->lookaheadThreads = 0;
     param->scenecutBias = 5.0;
@@ -597,7 +597,7 @@ int x265_param_default_preset(x265_param* param, const char* preset, const char*
             param->lookaheadDepth = 0;
             param->scenecutThreshold = 0;
             param->bHistBasedSceneCut = 0;
-            param->bDCTbasedSceneCut = 0;
+            param->bDCTtexture = 0;
             param->rc.cuTree = 0;
             param->frameNumThreads = 1;
         }
@@ -953,7 +953,6 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
            bError = false;
            p->scenecutThreshold = atoi(value);
            p->bHistBasedSceneCut = 0;
-           p->bDCTbasedSceneCut = 0;
        }
     }
     OPT("temporal-layers") p->bEnableTemporalSubLayers = atobool(value);
@@ -1240,18 +1239,13 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
             }
         }
         OPT("hist-threshold") p->edgeTransitionThreshold = atof(value);
-        OPT("dct-scenecut")
+        OPT("dct-texture")
         {
-            p->bDCTbasedSceneCut = atobool(value);
+            p->bDCTtexture = atobool(value);
             if (bError)
             {
                 bError = false;
-                p->bDCTbasedSceneCut = 0;
-            }
-            if (p->bDCTbasedSceneCut)
-            {
-                bError = false;
-                p->scenecutThreshold = 0;
+                p->bDCTtexture = 0;
             }
         }
         OPT("rskip-edge-threshold") p->edgeVarThreshold = atoi(value)/100.0f;
@@ -1901,9 +1895,6 @@ void x265_print_params(x265_param* param)
     else if (param->bHistBasedSceneCut && param->keyframeMax != INT_MAX) 
         x265_log(param, X265_LOG_INFO, "Keyframe min / max / scenecut / edge threshold  : %d / %d / %d / %.2lf\n",
                  param->keyframeMin, param->keyframeMax, param->bHistBasedSceneCut, param->edgeTransitionThreshold);
-    else if (param->bDCTbasedSceneCut && param->keyframeMax != INT_MAX)
-        x265_log(param, X265_LOG_INFO, "Keyframe min / max / scenecut  : %d / %d / %d \n",
-            param->keyframeMin, param->keyframeMax, param->bDCTbasedSceneCut);
     else if (param->keyframeMax == INT_MAX)
         x265_log(param, X265_LOG_INFO, "Keyframe min / max / scenecut       : disabled\n");
 
@@ -2089,7 +2080,7 @@ char *x265_param2string(x265_param* p, int padx, int pady)
     s += sprintf(s, " lookahead-slices=%d", p->lookaheadSlices);
     s += sprintf(s, " scenecut=%d", p->scenecutThreshold);
     s += sprintf(s, " hist-scenecut=%d", p->bHistBasedSceneCut);
-    s += sprintf(s, " dct-scenecut=%d", p->bDCTbasedSceneCut);
+    s += sprintf(s, " dct-texture=%d", p->bDCTtexture);
     s += sprintf(s, " radl=%d", p->radl);
     BOOL(p->bEnableHRDConcatFlag, "splice");
     BOOL(p->bIntraRefresh, "intra-refresh");
@@ -2402,7 +2393,7 @@ void x265_copy_params(x265_param* dst, x265_param* src)
     dst->lookaheadThreads = src->lookaheadThreads;
     dst->scenecutThreshold = src->scenecutThreshold;
     dst->bHistBasedSceneCut = src->bHistBasedSceneCut;
-    dst->bDCTbasedSceneCut = src->bDCTbasedSceneCut;
+    dst->bDCTtexture = src->bDCTtexture;
     dst->bIntraRefresh = src->bIntraRefresh;
     dst->maxCUSize = src->maxCUSize;
     dst->minCUSize = src->minCUSize;

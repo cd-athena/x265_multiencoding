@@ -220,9 +220,10 @@ typedef enum
 
 typedef struct x265_frame_texture_t
 {
-    int64_t* m_ctuAbsoluteEnergy;
-    int64_t* m_ctuRelativeEnergy;
-    int64_t* m_variance;
+    int32_t* m_ctuAbsoluteEnergy;
+    double* m_ctuRelativeEnergy;
+    int32_t m_variance;
+    int32_t m_avgEnergy;
 } x265_frame_texture_t;
 
 /* Stores all analysis data for a single frame */
