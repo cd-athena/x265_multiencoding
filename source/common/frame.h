@@ -148,6 +148,8 @@ public:
     x265_analysis_data*    m_multirateDataIn2;
     x265_analysis_data*    m_multirateDataOut;
 
+    x265_frame_texture_t*  m_frame_texture;
+
     Frame();
 
     bool create(x265_param *param, float* quantOffsets);

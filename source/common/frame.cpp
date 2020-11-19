@@ -69,6 +69,8 @@ Frame::Frame()
     m_multirateDataIn1 = NULL;
     m_multirateDataIn2 = NULL;
     m_multirateDataOut = NULL;
+
+    m_frame_texture = NULL;
 }
 
 bool Frame::create(x265_param *param, float* quantOffsets)
@@ -144,6 +146,15 @@ bool Frame::create(x265_param *param, float* quantOffsets)
         uint32_t bitPlaneSize = stride * (maxHeight + (lumaMarginY * 2));
         CHECKED_MALLOC_ZERO(m_edgeBitPlane, pixel, bitPlaneSize);
         m_edgeBitPic = m_edgeBitPlane + lumaMarginY * stride + lumaMarginX;
+    }
+
+    if (param->bDCTtexture)
+    {
+        uint32_t widthInCTU = (m_param->sourceWidth + param->maxCUSize - 1) >> m_param->maxLog2CUSize;
+        uint32_t heightInCTU = (m_param->sourceHeight + param->maxCUSize - 1) >> m_param->maxLog2CUSize;
+        uint32_t numCTUsInFrame = widthInCTU * heightInCTU;
+        CHECKED_MALLOC_ZERO(m_frame_texture->m_ctuAbsoluteEnergy, int64_t, numCTUsInFrame);
+        CHECKED_MALLOC_ZERO(m_frame_texture->m_ctuRelativeEnergy, int64_t, numCTUsInFrame);
     }
 
     if (m_fencPic->create(param, !!m_param->bCopyPicToFrame) && m_lowres.create(param, m_fencPic, param->rc.qgSize))

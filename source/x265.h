@@ -218,6 +218,13 @@ typedef enum
     MULTIRATE_REUSE_MV = 32,
 } MultirateLoadType;
 
+typedef struct x265_frame_texture_t
+{
+    int64_t* m_ctuAbsoluteEnergy;
+    int64_t* m_ctuRelativeEnergy;
+    int64_t* m_variance;
+} x265_frame_texture_t;
+
 /* Stores all analysis data for a single frame */
 typedef struct x265_analysis_data
 {
@@ -1890,8 +1897,8 @@ typedef struct x265_param
     /* Enables histogram based scenecut detection algorithm to detect scenecuts. Default disabled */
     int       bHistBasedSceneCut;
 
-    /* Enables DCT based scenecut detection algorithm to detect scenecuts. Default disabled */
-    int       bDCTbasedSceneCut;
+    /* Enables DCT based texture estimation. Default disabled */
+    int       bDCTtexture;
 
     /* Enable HME search ranges for L0, L1 and L2 respectively. */
     int       hmeRange[3];
