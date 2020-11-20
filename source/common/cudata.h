@@ -242,6 +242,10 @@ public:
     uint32_t*       m_collectCUVariance;
     uint32_t*       m_collectCUCount;
 
+    int32_t         m_dctEnergy;
+    uint8_t         m_maxPredCUDepth;
+    uint8_t         m_minPredCUDepth;
+
     CUData();
 
     void     initialize(const CUDataMemPool& dataPool, uint32_t depth, const x265_param& param, int instance);
