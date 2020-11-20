@@ -177,17 +177,17 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
             int16_t depth_var_left = 0;
             int16_t depth_var_above = 0;
 
-            for (uint8_t i = 0; i < ctu.m_numPartitions; i++)
+            for (int16_t i = 0; i < (int16_t)ctu.m_numPartitions; i++)
             {
                 depth_mean_above += ctu.m_cuAbove->m_cuDepth[i];
                 depth_mean_left += ctu.m_cuLeft->m_cuDepth[i];
                 depth_sq_mean_above += (ctu.m_cuAbove->m_cuDepth[i] * ctu.m_cuAbove->m_cuDepth[i]);
                 depth_sq_mean_left += (ctu.m_cuLeft->m_cuDepth[i] * ctu.m_cuLeft->m_cuDepth[i]);
             }
-            depth_mean_above = depth_mean_above / (ctu.m_numPartitions);
-            depth_mean_left = depth_mean_left / (ctu.m_numPartitions);
-            depth_var_above = (depth_sq_mean_above / ctu.m_numPartitions) - (depth_mean_above * depth_mean_above);
-            depth_var_left = (depth_sq_mean_left / ctu.m_numPartitions) - (depth_mean_left * depth_mean_left);
+            depth_mean_above = int16_t(depth_mean_above / ctu.m_numPartitions);
+            depth_mean_left = int16_t(depth_mean_left / ctu.m_numPartitions);
+            depth_var_above = int16_t(depth_sq_mean_above / ctu.m_numPartitions) - int16_t(depth_mean_above * depth_mean_above);
+            depth_var_left = int16_t(depth_sq_mean_left / ctu.m_numPartitions) - int16_t(depth_mean_left * depth_mean_left);
 
             int16_t min_depth_mean = X265_MIN(depth_mean_above, depth_mean_left);
             int16_t max_depth_mean = X265_MAX(depth_mean_above, depth_mean_left);
@@ -202,6 +202,11 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
                 ctu.m_minPredCUDepth = uint8_t(floor(max_depth_mean - (min_depth_var / 2) + 0.5));
             else
                 ctu.m_minPredCUDepth = uint8_t(floor(min_depth_mean - (max_depth_var / 2) + 0.5));
+        }
+        else
+        {
+            ctu.m_minPredCUDepth = 255;
+            ctu.m_maxPredCUDepth = 255;
         }
     }
 
@@ -621,6 +626,23 @@ uint64_t Analysis::compressIntraCU(const CUData& parentCTU, const CUGeom& cuGeom
 
     bool bAlreadyDecided = m_param->intraRefine != 4 && parentCTU.m_lumaIntraDir[cuGeom.absPartIdx] != (uint8_t)ALL_IDX && !(m_param->bAnalysisType == HEVC_INFO);
     bool bDecidedDepth = m_param->intraRefine != 4 && parentCTU.m_cuDepth[cuGeom.absPartIdx] == depth;
+
+    if (m_param->bDCTtexture && (parentCTU.m_maxPredCUDepth != 255) && (parentCTU.m_minPredCUDepth != 255))
+    {
+        uint8_t maxPossibleDepth = parentCTU.m_maxPredCUDepth;
+        uint8_t minPossibleDepth = parentCTU.m_minPredCUDepth;
+        if (depth >= maxPossibleDepth)
+        {
+            mightSplit = false;
+            mightNotSplit = true;
+            bDecidedDepth = true;
+        }
+        else if (depth < minPossibleDepth)
+        {
+            mightSplit = true;
+            mightNotSplit = false;
+        }
+    }
 
     // stop recursion based on MR reference depth
     if (m_param->mr_load & MULTIRATE_CU_TREE_LOWER_SINGLE_BOUND)
