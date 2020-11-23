@@ -163,7 +163,7 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
     {
         ctu.m_dctEnergy = frame.m_frame_texture->m_ctuAbsoluteEnergy[ctu.m_cuAddr];
         int32_t texture_cur = ctu.m_dctEnergy;
-        if (ctu.m_cuAbove && ctu.m_cuLeft && ctu.m_cuAboveLeft)
+        if (ctu.m_cuAbove && ctu.m_cuLeft && ctu.m_cuAboveLeft && !ctu.m_bLastRowInSlice)
         {
             int32_t texture_above = ctu.m_cuAbove->m_dctEnergy;
             int32_t texture_left = ctu.m_cuLeft->m_dctEnergy;
@@ -640,7 +640,6 @@ uint64_t Analysis::compressIntraCU(const CUData& parentCTU, const CUGeom& cuGeom
         {
             mightSplit = false;
             mightNotSplit = true;
-            bDecidedDepth = true;
         }
         else if (depth < minPossibleDepth)
         {
