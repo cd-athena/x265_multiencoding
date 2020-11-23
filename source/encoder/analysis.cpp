@@ -163,36 +163,41 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
     {
         ctu.m_dctEnergy = frame.m_frame_texture->m_ctuAbsoluteEnergy[ctu.m_cuAddr];
         int32_t texture_cur = ctu.m_dctEnergy;
-        if (ctu.m_cuAbove && ctu.m_cuLeft)
+        if (ctu.m_cuAbove && ctu.m_cuLeft && ctu.m_cuAboveLeft)
         {
             int32_t texture_above = ctu.m_cuAbove->m_dctEnergy;
             int32_t texture_left = ctu.m_cuLeft->m_dctEnergy;
-            int32_t texture_min = X265_MIN(texture_above, texture_left);
-            int32_t texture_max = X265_MAX(texture_above, texture_left);
-            
-            int16_t depth_mean_left = 0;
-            int16_t depth_mean_above = 0;
-            int16_t depth_sq_mean_left = 0;
-            int16_t depth_sq_mean_above = 0;
-            int16_t depth_var_left = 0;
-            int16_t depth_var_above = 0;
-
+            int32_t texture_aboveleft = ctu.m_cuAboveLeft->m_dctEnergy;
+            int32_t texture_min = X265_MIN(texture_above, X265_MIN(texture_left, texture_aboveleft));
+            int32_t texture_max = X265_MAX(texture_above, X265_MAX(texture_left, texture_aboveleft));
+            double depth_mean_left = 0;
+            double depth_mean_above = 0;
+            double depth_mean_aboveleft = 0;
+            double depth_sq_mean_left = 0;
+            double depth_sq_mean_above = 0;
+            double depth_sq_mean_aboveleft = 0;
+            double depth_var_left = 0;
+            double depth_var_above = 0;
+            double depth_var_aboveleft = 0;
             for (int16_t i = 0; i < (int16_t)ctu.m_numPartitions; i++)
             {
                 depth_mean_above += ctu.m_cuAbove->m_cuDepth[i];
                 depth_mean_left += ctu.m_cuLeft->m_cuDepth[i];
+                depth_mean_aboveleft += ctu.m_cuAboveLeft->m_cuDepth[i];
                 depth_sq_mean_above += (ctu.m_cuAbove->m_cuDepth[i] * ctu.m_cuAbove->m_cuDepth[i]);
                 depth_sq_mean_left += (ctu.m_cuLeft->m_cuDepth[i] * ctu.m_cuLeft->m_cuDepth[i]);
+                depth_sq_mean_aboveleft += (ctu.m_cuAboveLeft->m_cuDepth[i] * ctu.m_cuAboveLeft->m_cuDepth[i]);
             }
-            depth_mean_above = int16_t(depth_mean_above / ctu.m_numPartitions);
-            depth_mean_left = int16_t(depth_mean_left / ctu.m_numPartitions);
-            depth_var_above = int16_t(depth_sq_mean_above / ctu.m_numPartitions) - int16_t(depth_mean_above * depth_mean_above);
-            depth_var_left = int16_t(depth_sq_mean_left / ctu.m_numPartitions) - int16_t(depth_mean_left * depth_mean_left);
-
-            int16_t min_depth_mean = X265_MIN(depth_mean_above, depth_mean_left);
-            int16_t max_depth_mean = X265_MAX(depth_mean_above, depth_mean_left);
-            int16_t min_depth_var = X265_MIN(depth_var_above, depth_var_left);
-            int16_t max_depth_var = X265_MAX(depth_var_above, depth_var_left);
+            depth_mean_above = double(depth_mean_above / ctu.m_numPartitions);
+            depth_mean_left = double(depth_mean_left / ctu.m_numPartitions);
+            depth_mean_aboveleft = double(depth_mean_aboveleft / ctu.m_numPartitions);
+            depth_var_above = double(depth_sq_mean_above / ctu.m_numPartitions) - double(depth_mean_above * depth_mean_above);
+            depth_var_left = double(depth_sq_mean_left / ctu.m_numPartitions) - double(depth_mean_left * depth_mean_left);
+            depth_var_aboveleft = double(depth_sq_mean_aboveleft / ctu.m_numPartitions) - double(depth_mean_aboveleft * depth_mean_aboveleft);
+            double min_depth_mean = X265_MIN(depth_mean_above, X265_MIN(depth_mean_left, depth_mean_aboveleft));
+            double max_depth_mean = X265_MAX(depth_mean_above, X265_MAX(depth_mean_left, depth_mean_aboveleft));
+            double min_depth_var = X265_MIN(depth_var_above, X265_MIN(depth_var_left, depth_var_aboveleft));
+            double max_depth_var = X265_MAX(depth_var_above, X265_MAX(depth_var_left, depth_var_aboveleft));
             if(texture_cur < texture_min)
                 ctu.m_maxPredCUDepth = uint8_t(ceil(min_depth_mean + (min_depth_var / 2) + 0.5));
             else
