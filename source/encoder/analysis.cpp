@@ -162,6 +162,7 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
     if (m_param->bDCTtexture)
     {
         ctu.m_dctEnergy = frame.m_frame_texture->m_ctuAbsoluteEnergy[ctu.m_cuAddr];
+        ctu.m_relDctEnergy = frame.m_frame_texture->m_ctuRelativeEnergy[ctu.m_cuAddr];
         int32_t texture_cur = ctu.m_dctEnergy;
         if (ctu.m_cuAbove && ctu.m_cuLeft && ctu.m_cuAboveLeft && !ctu.m_bLastRowInSlice)
         {
@@ -351,6 +352,29 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
         bool bCompressInterCUrd5_6 = (m_param->bAnalysisType == AVC_INFO && m_param->analysisLoadReuseLevel >= 7 && m_param->rdLevel >= 5 && m_param->rdLevel <= 6);
         bCopyAnalysis = bCopyAnalysis || bCompressInterCUrd0_4 || bCompressInterCUrd5_6;
 
+        if (m_param->mr_load && m_param->bDCTtexture && ctu.m_relDctEnergy < 0.6)
+        {
+            /* If the CTU is relatively homogeneous, analysis 10 + refinement for multi-rate */
+            x265_analysis_inter_data* interDataCTU = m_frame->m_multirateDataIn1->interData;
+            int posCTU = ctu.m_cuAddr * numPartition;
+            memcpy(ctu.m_cuDepth, &interDataCTU->depth[posCTU], sizeof(uint8_t) * numPartition);
+            memcpy(ctu.m_predMode, &interDataCTU->modes[posCTU], sizeof(uint8_t) * numPartition);
+            memcpy(ctu.m_partSize, &interDataCTU->partSize[posCTU], sizeof(uint8_t) * numPartition);
+            for (int list = 0; list < m_slice->isInterB() + 1; list++)
+                memcpy(ctu.m_skipFlag[list], &m_frame->m_multirateDataIn1->modeFlag[list][posCTU], sizeof(uint8_t) * numPartition);
+
+            if ((m_slice->m_sliceType == P_SLICE || m_param->bIntraInBFrames) && !(m_param->bAnalysisType == AVC_INFO))
+            {
+                x265_analysis_intra_data* intraDataCTU = m_frame->m_multirateDataIn1->intraData;
+                memcpy(ctu.m_lumaIntraDir, &intraDataCTU->modes[posCTU], sizeof(uint8_t) * numPartition);
+                memcpy(ctu.m_chromaIntraDir, &intraDataCTU->chromaModes[posCTU], sizeof(uint8_t) * numPartition);
+            }
+            for (uint32_t i = 0; i < cuGeom.numPartitions; i++)
+                ctu.m_log2CUSize[i] = (uint8_t)m_param->maxLog2CUSize - ctu.m_cuDepth[i];
+
+            qprdRefine(ctu, cuGeom, qp, qp);
+            return *m_modeDepth[0].bestMode;
+        }
         if (bCopyAnalysis)
         {
             x265_analysis_inter_data* interDataCTU = m_frame->m_analysisData.interData;
@@ -568,7 +592,7 @@ void Analysis::qprdRefine(const CUData& parentCTU, const CUGeom& cuGeom, int32_t
     int bestCUQP = qp;
     int lambdaQP = lqp;
     bool doQPRefine = (bDecidedDepth && depth <= m_slice->m_pps->maxCuDQPDepth) || (!bDecidedDepth && depth == m_slice->m_pps->maxCuDQPDepth);
-    if (m_param->analysisLoadReuseLevel >= 7)
+    if (m_param->analysisLoadReuseLevel >= 7 || m_param->mr_load)
         doQPRefine = false;
     if (doQPRefine)
     {
@@ -1420,6 +1444,15 @@ SplitData Analysis::compressInterCU_rd0_4(const CUData& parentCTU, const CUGeom&
         }
 
         bool skipIntra = false;
+
+        if (m_param->bDCTtexture)
+        {
+            if (parentCTU.m_relDctEnergy < 0.7)
+            {
+                skipRectAmp = true;
+            }
+        }
+
         // stop recursion based on MR reference depth
         if (m_param->mr_load & MULTIRATE_CU_TREE_LOWER_SINGLE_BOUND || m_param->mr_load & MULTIRATE_CU_TREE_UPPER_SINGLE_BOUND)
         {
@@ -2247,6 +2280,11 @@ SplitData Analysis::compressInterCU_rd5_6(const CUData& parentCTU, const CUGeom&
         if (m_param->mr_load & MULTIRATE_CU_TREE_LOWER_SINGLE_BOUND || m_param->mr_load & MULTIRATE_CU_TREE_UPPER_SINGLE_BOUND)
         {
             uint8_t refDepth = m_reuseDepth1[cuGeom.absPartIdx];
+            if (m_param->bDCTtexture && parentCTU.m_relDctEnergy < 0.5)
+            {
+                /* If the CTU is not complex, go for analysis 10 + refinement approach for multi-rate */
+
+            }
             if (m_param->mr_load & MULTIRATE_CU_TREE_LOWER_SINGLE_BOUND)
             {
                 if (depth >= refDepth)
@@ -2884,6 +2922,9 @@ void Analysis::recodeCU(const CUData& parentCTU, const CUGeom& cuGeom, int32_t q
     else
         m_refineLevel = m_frame->m_classifyFrame ? 1 : 3;
 
+    if (!m_param->bDynamicRefine && m_param->mr_load)
+        m_refineLevel = 4;
+
     if (m_param->interRefine == 1)
         split = (m_param->scaleFactor && bDecidedDepth && parentCTU.m_predMode[cuGeom.absPartIdx] == MODE_SKIP && (!mightNotSplit ||
                 (m_refineLevel && cuGeom.log2CUSize == (uint32_t)(g_log2Size[m_param->minCUSize] + 1))));
@@ -2902,7 +2943,7 @@ void Analysis::recodeCU(const CUData& parentCTU, const CUGeom& cuGeom, int32_t q
         PartSize size = (PartSize)parentCTU.m_partSize[cuGeom.absPartIdx];
         if (parentCTU.isIntra(cuGeom.absPartIdx) && m_refineLevel < 2)
         {
-            if (m_param->intraRefine == 4)
+            if (m_param->intraRefine == 4 || m_param->mr_load)
                 compressIntraCU(parentCTU, cuGeom, qp);
             else
             {
@@ -3069,7 +3110,7 @@ void Analysis::recodeCU(const CUData& parentCTU, const CUGeom& cuGeom, int32_t q
                 if (m_slice->m_pps->bUseDQP && nextDepth <= m_slice->m_pps->maxCuDQPDepth)
                     nextQP = setLambdaFromQP(parentCTU, calculateQpforCuSize(parentCTU, childGeom));
 
-                int lamdaQP = (m_param->analysisLoadReuseLevel >= 7) ? nextQP : lqp;
+                int lamdaQP = (m_param->analysisLoadReuseLevel >= 7 || m_param->mr_load) ? nextQP : lqp;
 
                 if (split)
                     m_param->rdLevel > 4 ? compressInterCU_rd5_6(parentCTU, childGeom, nextQP) : compressInterCU_rd0_4(parentCTU, childGeom, nextQP);
