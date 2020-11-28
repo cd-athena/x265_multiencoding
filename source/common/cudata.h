@@ -243,6 +243,7 @@ public:
     uint32_t*       m_collectCUCount;
 
     int32_t         m_dctEnergy;
+    double          m_relDctEnergy;
     uint8_t         m_maxPredCUDepth;
     uint8_t         m_minPredCUDepth;
 

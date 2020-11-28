@@ -2203,9 +2203,10 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
         /* Multi-rate */
         if (m_param->mr_load)
         {
-            readMultiRateFile(inFrame->m_multirateDataIn1, inFrame->m_poc, m_mr_loadFile1);
+            static int paramBytes1 = sizeof(m_conformanceWindow.rightOffset) + sizeof(m_conformanceWindow.bottomOffset);
+            readMultiRateFile(inFrame->m_multirateDataIn1, inFrame->m_poc, m_mr_loadFile1, paramBytes1);
             if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
-                readMultiRateFile(inFrame->m_multirateDataIn2, inFrame->m_poc, m_mr_loadFile2);
+                readMultiRateFile(inFrame->m_multirateDataIn2, inFrame->m_poc, m_mr_loadFile2, paramBytes1);
             inFrame->m_poc = inFrame->m_multirateDataIn1->poc;
             sliceType = inFrame->m_multirateDataIn1->sliceType;
             inFrame->m_lowres.bScenecut = !!inFrame->m_multirateDataIn1->bScenecut;
@@ -4382,6 +4383,47 @@ void Encoder::configure(x265_param *p)
         }
     }
 
+    if (m_param->mr_load)
+    {
+        m_mr_loadFile1 = x265_fopen(m_param->mr_load_filename1, "rb");
+        if (!m_mr_loadFile1)
+        {
+            x265_log_file(NULL, X265_LOG_ERROR, "multi-rate load: failed to open file %s\n", m_param->mr_load_filename1);
+            m_aborted = true;
+        }
+        else
+        {
+            int rightOffset, bottomOffset;
+            if (fread(&rightOffset, sizeof(int), 1, m_mr_loadFile1) != 1)
+            {
+                x265_log(NULL, X265_LOG_ERROR, "Error reading multi-rate data. Conformance window right offset missing\n");
+                m_aborted = true;
+            }
+            else if (rightOffset)
+            {
+                int scaleFactor = p->scaleFactor < 2 ? 1 : p->scaleFactor;
+                padsize = rightOffset * scaleFactor;
+                p->sourceWidth += padsize;
+                m_conformanceWindow.bEnabled = true;
+                m_conformanceWindow.rightOffset = padsize;
+            }
+
+            if (fread(&bottomOffset, sizeof(int), 1, m_mr_loadFile1) != 1)
+            {
+                x265_log(NULL, X265_LOG_ERROR, "Error reading multi-rate data. Conformance window bottom offset missing\n");
+                m_aborted = true;
+            }
+            else if (bottomOffset)
+            {
+                int scaleFactor = p->scaleFactor < 2 ? 1 : p->scaleFactor;
+                padsize = bottomOffset * scaleFactor;
+                p->sourceHeight += padsize;
+                m_conformanceWindow.bEnabled = true;
+                m_conformanceWindow.bottomOffset = padsize;
+            }
+        }
+    }
+
     /* set pad size if width is not multiple of the minimum CU size */
     if (p->confWinRightOffset)
     {
@@ -4739,7 +4781,7 @@ void Encoder::configure(x265_param *p)
 
 }
 
-void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* fp)
+void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* fp, int parambytes)
 {
 #define X265_FREAD(val, size, readSize, fileOffset)\
     if (fread(val, size, readSize, fileOffset) != readSize)\
@@ -4753,7 +4795,7 @@ void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* 
     static uint64_t consumedBytes = 0;
     static uint64_t totalConsumedBytes = 0;
     uint32_t depthBytes = 0;
-    fseeko(fp, totalConsumedBytes, SEEK_SET);
+    fseeko(fp, totalConsumedBytes + parambytes, SEEK_SET);
     int poc; uint32_t frameRecordSize;
     X265_FREAD(&frameRecordSize, sizeof(uint32_t), 1, fp);
     X265_FREAD(&depthBytes, sizeof(uint32_t), 1, fp);
@@ -4763,7 +4805,7 @@ void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* 
     while (poc != curPoc && !feof(fp))
     {
         currentOffset += frameRecordSize;
-        fseeko(fp, currentOffset, SEEK_SET);
+        fseeko(fp, currentOffset + parambytes, SEEK_SET);
         X265_FREAD(&frameRecordSize, sizeof(uint32_t), 1, fp);
         X265_FREAD(&depthBytes, sizeof(uint32_t), 1, fp);
         X265_FREAD(&poc, sizeof(int), 1, fp);
@@ -4842,7 +4884,7 @@ void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* 
         for (uint32_t d = 0; d < depthBytes; d++)
         {
             int bytes = analysis->numPartitions >> (depthBuf[d] * 2);
-            if (m_param->scaleFactor && !m_param->mr_load)
+            if (m_param->scaleFactor/* && !m_param->mr_load*/)
             {
                 if (depthBuf[d] == 0)
                     depthBuf[d] = 1;
@@ -4921,14 +4963,14 @@ void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* 
         for (uint32_t d = 0; d < depthBytes; d++)
         {
             int bytes = analysis->numPartitions >> (depthBuf[d] * 2);
-            if (m_param->scaleFactor && !m_param->mr_load && modeBuf[d] == MODE_INTRA && depthBuf[d] == 0)
+            if (m_param->scaleFactor /*&& !m_param->mr_load*/ && modeBuf[d] == MODE_INTRA && depthBuf[d] == 0)
                 depthBuf[d] = 1;
             memset(&(analysis->interData)->depth[count], depthBuf[d], bytes);
             memset(&(analysis->interData)->modes[count], modeBuf[d], bytes);
             if (m_param->rc.cuTree)
                 memset(&(analysis->interData)->cuQPOff[count], cuQPBuf[d], bytes);
 
-            if (m_param->scaleFactor && !m_param->mr_load && modeBuf[d] == MODE_INTRA && partSize[d] == SIZE_NxN)
+            if (m_param->scaleFactor /*&& !m_param->mr_load*/ && modeBuf[d] == MODE_INTRA && partSize[d] == SIZE_NxN)
                 partSize[d] = SIZE_2Nx2N;
             memset(&(analysis->interData)->partSize[count], partSize[d], bytes);
             int numPU = (modeBuf[d] == MODE_INTRA) ? 1 : nbPartsTable[(int)partSize[d]];
@@ -6135,6 +6177,13 @@ void Encoder::writeMultiRateFile(x265_analysis_data* analysis, FrameData &curEnc
     uint32_t depthBytes = 0;
     uint32_t numDir, numPlanes;
     bool bIntraInInter = false;
+
+    if (!analysis->poc)
+    {
+        X265_FWRITE(&m_conformanceWindow.rightOffset, sizeof(int), 1, m_mr_saveFile);
+        X265_FWRITE(&m_conformanceWindow.bottomOffset, sizeof(int), 1, m_mr_saveFile);
+    }
+
     /* calculate frameRecordSize */
     analysis->frameRecordSize = sizeof(analysis->frameRecordSize) + sizeof(depthBytes) + sizeof(analysis->poc) + sizeof(analysis->sliceType) +
         sizeof(analysis->numCUsInFrame) + sizeof(analysis->numPartitions) + sizeof(analysis->bScenecut) + sizeof(analysis->satdCost);
