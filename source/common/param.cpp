@@ -368,12 +368,14 @@ void x265_param_default(x265_param* param)
     param->bEnableSvtHevc = 0;
     param->svtHevcParam = NULL;
 
-    /* Multi-rate */
+    /* Proposed multi-encoding */
     param->mr_load = 0;
     param->mr_save = 0;
     param->mr_save_filename = NULL;
     param->mr_load_filename1 = NULL;
     param->mr_load_filename2 = NULL;
+    param->scaleFactor1 = 0;
+    param->scaleFactor2 = 0;
 
 #ifdef SVT_HEVC
     param->svtHevcParam = svtParam;
@@ -1211,6 +1213,8 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
         OPT("mr-loadfile1") p->mr_load_filename1 = strdup(value);
         OPT("mr-loadfile2") p->mr_load_filename2 = strdup(value);
         OPT("mr-savefile") p->mr_save_filename = strdup(value);
+        OPT("scale-factor1") p->scaleFactor1 = atoi(value);
+        OPT("scale-factor2") p->scaleFactor2 = atoi(value);
         OPT("csv") p->csvfn = strdup(value);
         OPT("csv-log-level") p->csvLogLevel = atoi(value);
         OPT("qpmin") p->rc.qpMin = atoi(value);
@@ -1833,6 +1837,9 @@ int x265_check_params(x265_param* param)
     CHECK(param->confWinRightOffset < 0, "Conformance Window Right Offset must be 0 or greater");
     CHECK(param->confWinBottomOffset < 0, "Conformance Window Bottom Offset must be 0 or greater");
     CHECK(param->decoderVbvMaxRate < 0, "Invalid Decoder Vbv Maxrate. Value can not be less than zero");
+
+    CHECK(param->scaleFactor1 > 2, "Invalid scale-factor1. Supports factor <= 2");
+    CHECK(param->scaleFactor2 > 2, "Invalid scale-factor2. Supports factor <= 2");
     return check_failed;
 }
 
@@ -2602,7 +2609,7 @@ void x265_copy_params(x265_param* dst, x265_param* src)
     if (src->analysisLoad) dst->analysisLoad=strdup(src->analysisLoad);
     else dst->analysisLoad = NULL;
 
-    /* Multi-rate */
+    /* Proposed multi-encoding */
     dst->mr_save = src->mr_save;
     dst->mr_load = src->mr_load;
     if (src->mr_save_filename) dst->mr_save_filename = strdup(src->mr_save_filename);
@@ -2611,6 +2618,8 @@ void x265_copy_params(x265_param* dst, x265_param* src)
     else dst->mr_load_filename1 = NULL;
     if (src->mr_load_filename2) dst->mr_load_filename2 = strdup(src->mr_load_filename2);
     else dst->mr_load_filename2 = NULL;
+    dst->scaleFactor1 = src->scaleFactor1;
+    dst->scaleFactor2 = src->scaleFactor2;
 
     dst->gopLookahead = src->gopLookahead;
     dst->radl = src->radl;

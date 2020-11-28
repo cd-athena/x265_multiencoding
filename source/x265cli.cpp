@@ -345,6 +345,8 @@ namespace X265_NS {
         H0("   --mr-loadfile1 <filename>     Filename of first file from which multirate data is loaded");
         H0("   --mr-loadfile2 <filename>     Filename of second file from which multirate data is loaded");
         H0("   --mr-savefile <filename>      Filename of file where multirate data is saved");
+        H0("   --scale-factor1 <int>         Specify factor by which input video is scaled down for mr-load mode. Default %d\n", param->scaleFactor1);
+        H0("   --scale-factor2 <int>         Specify factor by which input video is scaled down for mr-load mode. Default %d\n", param->scaleFactor2);
 #ifdef SVT_HEVC
         H0("   --[no]svt                     Enable SVT HEVC encoder %s\n", OPT(param->bEnableSvtHevc));
         H0("   --[no-]svt-hme                Enable Hierarchial motion estimation(HME) in SVT HEVC encoder \n");

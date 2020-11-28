@@ -316,7 +316,7 @@ public:
     void destroy();
 
     /* Multi-rate */
-    void readMultiRateFile(x265_analysis_data* refData, int curPoc, FILE* fp, int parambytes);
+    void readMultiRateFile(x265_analysis_data* refData, int curPoc, FILE* fp, int parambytes, int analysisScaleFactor);
     void writeMultiRateFile(x265_analysis_data* refData, FrameData &curEncData);
 
     int encode(const x265_picture* pic, x265_picture *pic_out);

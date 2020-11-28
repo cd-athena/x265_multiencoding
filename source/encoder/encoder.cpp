@@ -2204,9 +2204,13 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
         if (m_param->mr_load)
         {
             static int paramBytes1 = sizeof(m_conformanceWindow.rightOffset) + sizeof(m_conformanceWindow.bottomOffset);
-            readMultiRateFile(inFrame->m_multirateDataIn1, inFrame->m_poc, m_mr_loadFile1, paramBytes1);
+            int analysisScaleFactor = m_param->scaleFactor1;
+            readMultiRateFile(inFrame->m_multirateDataIn1, inFrame->m_poc, m_mr_loadFile1, paramBytes1, analysisScaleFactor);
             if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
-                readMultiRateFile(inFrame->m_multirateDataIn2, inFrame->m_poc, m_mr_loadFile2, paramBytes1);
+            {
+                analysisScaleFactor = m_param->scaleFactor2;
+                readMultiRateFile(inFrame->m_multirateDataIn2, inFrame->m_poc, m_mr_loadFile2, paramBytes1, analysisScaleFactor);
+            }
             inFrame->m_poc = inFrame->m_multirateDataIn1->poc;
             sliceType = inFrame->m_multirateDataIn1->sliceType;
             inFrame->m_lowres.bScenecut = !!inFrame->m_multirateDataIn1->bScenecut;
@@ -2356,8 +2360,8 @@ int Encoder::encode(const x265_picture* pic_in, x265_picture* pic_out)
             if (m_param->mr_save)
             {
                 int factor = 1;
-                if (m_param->scaleFactor)
-                    factor = m_param->scaleFactor * 2;
+                if (m_param->scaleFactor1)
+                    factor = m_param->scaleFactor1 * 2;
                 outFrame->m_multirateDataOut->lookahead.dts = outFrame->m_dts;
                 outFrame->m_multirateDataOut->lookahead.reorderedPts = outFrame->m_reorderedPts;
                 outFrame->m_multirateDataOut->satdCost = outFrame->m_lowres.satdCost * factor;
@@ -4205,6 +4209,20 @@ void Encoder::configure(x265_param *p)
             p->scaleFactor = 0;
         }
     }
+    if (p->scaleFactor1)
+    {
+        if (p->scaleFactor1 == 1)
+        {
+            p->scaleFactor1 = 0;
+        }
+    }
+    if (p->scaleFactor2)
+    {
+        if (p->scaleFactor2 == 1)
+        {
+            p->scaleFactor2 = 0;
+        }
+    }
 
     if (p->intraRefine && p->analysisLoadReuseLevel && p->analysisLoadReuseLevel < 10)
     {
@@ -4401,7 +4419,7 @@ void Encoder::configure(x265_param *p)
             }
             else if (rightOffset)
             {
-                int scaleFactor = p->scaleFactor < 2 ? 1 : p->scaleFactor;
+                int scaleFactor = p->scaleFactor1 < 2 ? 1 : p->scaleFactor1;
                 padsize = rightOffset * scaleFactor;
                 p->sourceWidth += padsize;
                 m_conformanceWindow.bEnabled = true;
@@ -4415,7 +4433,7 @@ void Encoder::configure(x265_param *p)
             }
             else if (bottomOffset)
             {
-                int scaleFactor = p->scaleFactor < 2 ? 1 : p->scaleFactor;
+                int scaleFactor = p->scaleFactor1 < 2 ? 1 : p->scaleFactor1;
                 padsize = bottomOffset * scaleFactor;
                 p->sourceHeight += padsize;
                 m_conformanceWindow.bEnabled = true;
@@ -4781,7 +4799,8 @@ void Encoder::configure(x265_param *p)
 
 }
 
-void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* fp, int parambytes)
+void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* fp,
+                                int parambytes, int analysisScaleFactor)
 {
 #define X265_FREAD(val, size, readSize, fileOffset)\
     if (fread(val, size, readSize, fileOffset) != readSize)\
@@ -4836,8 +4855,8 @@ void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* 
     X265_FREAD(&numCUsInHeightLoad, sizeof(uint32_t), 1, fp);
     X265_FREAD(&analysis->lookahead, sizeof(x265_lookahead_data), 1, fp);
     int scaledNumPartition = analysis->numPartitions;
-    int factor = 1 << m_param->scaleFactor;
-    if (m_param->scaleFactor)
+    int factor = 1 << analysisScaleFactor;
+    if (analysisScaleFactor)
         analysis->numPartitions *= factor;
     /* Memory is allocated for inter and intra analysis data based on the slicetype */
     x265_alloc_multirate_data(m_param, analysis);
@@ -4850,7 +4869,7 @@ void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* 
         X265_FREAD(analysis->lookahead.satdForVbv, sizeof(uint32_t), numCUsInHeightLoad, fp);
         X265_FREAD(analysis->lookahead.intraSatdForVbv, sizeof(uint32_t), numCUsInHeightLoad, fp);
         X265_FREAD(analysis->lookahead.plannedSatd, sizeof(int64_t), vbvCount, fp);
-        if (m_param->scaleFactor)
+        if (analysisScaleFactor)
         {
             for (uint64_t index = 0; index < vbvCount; index++)
                 analysis->lookahead.plannedSatd[index] *= factor;
@@ -4884,7 +4903,7 @@ void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* 
         for (uint32_t d = 0; d < depthBytes; d++)
         {
             int bytes = analysis->numPartitions >> (depthBuf[d] * 2);
-            if (m_param->scaleFactor/* && !m_param->mr_load*/)
+            if (analysisScaleFactor)
             {
                 if (depthBuf[d] == 0)
                     depthBuf[d] = 1;
@@ -4898,7 +4917,7 @@ void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* 
                 memset(&(analysis->intraData)->cuQPOff[count], cuQPBuf[d], bytes);
             count += bytes;
         }
-        if (!m_param->scaleFactor)
+        if (!analysisScaleFactor)
         {
             X265_FREAD((analysis->intraData)->modes, sizeof(uint8_t), numCUsLoad * analysis->numPartitions, fp);
         }
@@ -4963,14 +4982,14 @@ void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* 
         for (uint32_t d = 0; d < depthBytes; d++)
         {
             int bytes = analysis->numPartitions >> (depthBuf[d] * 2);
-            if (m_param->scaleFactor /*&& !m_param->mr_load*/ && modeBuf[d] == MODE_INTRA && depthBuf[d] == 0)
+            if (analysisScaleFactor && modeBuf[d] == MODE_INTRA && depthBuf[d] == 0)
                 depthBuf[d] = 1;
             memset(&(analysis->interData)->depth[count], depthBuf[d], bytes);
             memset(&(analysis->interData)->modes[count], modeBuf[d], bytes);
             if (m_param->rc.cuTree)
                 memset(&(analysis->interData)->cuQPOff[count], cuQPBuf[d], bytes);
 
-            if (m_param->scaleFactor /*&& !m_param->mr_load*/ && modeBuf[d] == MODE_INTRA && partSize[d] == SIZE_NxN)
+            if (analysisScaleFactor && modeBuf[d] == MODE_INTRA && partSize[d] == SIZE_NxN)
                 partSize[d] = SIZE_2Nx2N;
             memset(&(analysis->interData)->partSize[count], partSize[d], bytes);
             int numPU = (modeBuf[d] == MODE_INTRA) ? 1 : nbPartsTable[(int)partSize[d]];
@@ -4983,7 +5002,7 @@ void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* 
                 {
                     (analysis->interData)->mvpIdx[i][count + pu] = mvpIdx[i][d];
                     (analysis->interData)->refIdx[i][count + pu] = refIdx[i][d];
-                    if (m_param->scaleFactor)
+                    if (analysisScaleFactor)
                     {
                         mv[i][d].x *= (int32_t)m_param->scaleFactor;
                         mv[i][d].y *= (int32_t)m_param->scaleFactor;
@@ -5008,7 +5027,7 @@ void Encoder::readMultiRateFile(x265_analysis_data* analysis, int curPoc, FILE* 
         }
         if (bIntraInInter)
         {
-            if (!m_param->scaleFactor)
+            if (!analysisScaleFactor)
             {
                 X265_FREAD((analysis->intraData)->modes, sizeof(uint8_t), numCUsLoad * analysis->numPartitions, fp);
             }
