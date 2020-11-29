@@ -315,7 +315,7 @@ public:
     void stopJobs();
     void destroy();
 
-    /* Multi-rate */
+    /* Proposed multi-encoding */
     void readMultiRateFile(x265_analysis_data* refData, int curPoc, FILE* fp, int parambytes, int analysisScaleFactor);
     void writeMultiRateFile(x265_analysis_data* refData, FrameData &curEncData);
 

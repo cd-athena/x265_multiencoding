@@ -1208,6 +1208,7 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
     if (bExtraParams)
     {
         if (0) ;
+        /* Proposed multi-encoding */
         OPT("mr-load") p->mr_load = atoi(value);
         OPT("mr-save") p->mr_save = atoi(value);
         OPT("mr-loadfile1") p->mr_load_filename1 = strdup(value);
@@ -1215,6 +1216,7 @@ int x265_param_parse(x265_param* p, const char* name, const char* value)
         OPT("mr-savefile") p->mr_save_filename = strdup(value);
         OPT("scale-factor1") p->scaleFactor1 = atoi(value);
         OPT("scale-factor2") p->scaleFactor2 = atoi(value);
+
         OPT("csv") p->csvfn = strdup(value);
         OPT("csv-log-level") p->csvLogLevel = atoi(value);
         OPT("qpmin") p->rc.qpMin = atoi(value);
@@ -1838,6 +1840,7 @@ int x265_check_params(x265_param* param)
     CHECK(param->confWinBottomOffset < 0, "Conformance Window Bottom Offset must be 0 or greater");
     CHECK(param->decoderVbvMaxRate < 0, "Invalid Decoder Vbv Maxrate. Value can not be less than zero");
 
+    /* Proposed multi-encoding */
     CHECK(param->scaleFactor1 > 2, "Invalid scale-factor1. Supports factor <= 2");
     CHECK(param->scaleFactor2 > 2, "Invalid scale-factor2. Supports factor <= 2");
     return check_failed;

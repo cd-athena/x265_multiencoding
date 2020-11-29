@@ -4209,6 +4209,8 @@ void Encoder::configure(x265_param *p)
             p->scaleFactor = 0;
         }
     }
+
+    /* Proposed multi-encoding */
     if (p->scaleFactor1)
     {
         if (p->scaleFactor1 == 1)
