@@ -210,12 +210,13 @@ typedef struct x265_analysis_distortion_data
 /* Multi-rate */
 typedef enum
 {
-    MULTIRATE_REUSE_LOOKAHEAD = 1,
+    MULTIRATE_DO_INTRA = 1,
     MULTIRATE_CU_TREE_LOWER_SINGLE_BOUND = 2,
     MULTIRATE_CU_TREE_UPPER_SINGLE_BOUND = 4,
     MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND = 8,
     MULTIRATE_REUSE_PREDICTION_MODES = 16,
     MULTIRATE_REUSE_MV = 32,
+    MULTIRATE_REUSE_LOOKAHEAD = 64,
 } MultirateLoadType;
 
 typedef struct x265_frame_texture_t

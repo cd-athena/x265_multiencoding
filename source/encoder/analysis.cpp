@@ -675,7 +675,7 @@ uint64_t Analysis::compressIntraCU(const CUData& parentCTU, const CUGeom& cuGeom
     }
 
     // stop recursion based on MR reference depth
-    if (m_param->mr_load & MULTIRATE_CU_TREE_LOWER_SINGLE_BOUND && (!m_param->scaleFactor1 || !m_param->scaleFactor2))
+    if (m_param->mr_load & MULTIRATE_CU_TREE_LOWER_SINGLE_BOUND && (m_param->mr_load & MULTIRATE_DO_INTRA))
     {
         uint8_t refDepth = parentCTU.m_refDepth1[cuGeom.absPartIdx];
         if (depth >= refDepth) // if depth is 0, we have to split (cf. below)
@@ -685,7 +685,7 @@ uint64_t Analysis::compressIntraCU(const CUData& parentCTU, const CUGeom& cuGeom
             bDecidedDepth = true;
         }
     }
-    if (m_param->mr_load & MULTIRATE_CU_TREE_UPPER_SINGLE_BOUND && (!m_param->scaleFactor1 || !m_param->scaleFactor2))
+    if (m_param->mr_load & MULTIRATE_CU_TREE_UPPER_SINGLE_BOUND && (m_param->mr_load & MULTIRATE_DO_INTRA))
     {
         uint8_t refDepth = parentCTU.m_refDepth1[cuGeom.absPartIdx];
         if (depth < refDepth)
@@ -694,7 +694,7 @@ uint64_t Analysis::compressIntraCU(const CUData& parentCTU, const CUGeom& cuGeom
             mightNotSplit = false;
         }
     }
-    if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND && (!m_param->scaleFactor1 || !m_param->scaleFactor2))
+    if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND && (m_param->mr_load & MULTIRATE_DO_INTRA))
     {
         uint8_t maxPossibleDepth = X265_MAX(parentCTU.m_refDepth1[cuGeom.absPartIdx], parentCTU.m_refDepth2[cuGeom.absPartIdx]);
         uint8_t minPossibleDepth = X265_MIN(parentCTU.m_refDepth1[cuGeom.absPartIdx], parentCTU.m_refDepth2[cuGeom.absPartIdx]);
