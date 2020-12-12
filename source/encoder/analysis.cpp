@@ -249,7 +249,7 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
             ctu.m_log2CUSize[i] = (uint8_t)m_param->maxLog2CUSize - ctu.m_cuDepth[i];
     }
 
-    /* Multi-rate */
+    /*== Proposed multi-encoding ==*/
     if (m_param->mr_load)
     {
         if (m_slice->m_sliceType != I_SLICE)
@@ -259,12 +259,6 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
             m_reuseModes1 = &m_reuseInterDataCTU1->modes[ctu.m_cuAddr * numPartition];
             m_reusePartSize1 = &m_reuseInterDataCTU1->partSize[ctu.m_cuAddr * numPartition];
             m_reuseMergeFlag1 = &m_reuseInterDataCTU1->mergeFlag[ctu.m_cuAddr * numPartition];
-            if (m_slice->m_sliceType == P_SLICE || m_param->bIntraInBFrames)
-            {
-                x265_analysis_intra_data* intraDataCTU1 = (x265_analysis_intra_data*)m_frame->m_multirateDataIn1->intraData;
-                memcpy(ctu.m_refLumaDir1, &intraDataCTU1->modes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
-                memcpy(ctu.m_refChromaDir1, &intraDataCTU1->chromaModes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
-            }
             if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
             {
                 m_reuseInterDataCTU2 = (x265_analysis_inter_data*)m_frame->m_multirateDataIn2->interData;
@@ -272,28 +266,22 @@ Mode& Analysis::compressCTU(CUData& ctu, Frame& frame, const CUGeom& cuGeom, con
                 m_reuseModes2 = &m_reuseInterDataCTU2->modes[ctu.m_cuAddr * ctu.m_numPartitions];
                 m_reusePartSize2 = &m_reuseInterDataCTU2->partSize[ctu.m_cuAddr * ctu.m_numPartitions];
                 m_reuseMergeFlag2 = &m_reuseInterDataCTU2->mergeFlag[ctu.m_cuAddr * ctu.m_numPartitions];
-                if (m_slice->m_sliceType == P_SLICE || m_param->bIntraInBFrames)
-                {
-                    x265_analysis_intra_data* intraDataCTU2 = (x265_analysis_intra_data*)m_frame->m_multirateDataIn2->intraData;
-                    memcpy(ctu.m_refLumaDir2, &intraDataCTU2->modes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
-                    memcpy(ctu.m_refChromaDir2, &intraDataCTU2->chromaModes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
-                }
             }
         }
         else
         {
             x265_analysis_intra_data* intraDataCTU1 = (x265_analysis_intra_data*)m_frame->m_multirateDataIn1->intraData;
-            memcpy(ctu.m_refDepth1, &intraDataCTU1->depth[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
-            memcpy(ctu.m_refLumaDir1, &intraDataCTU1->modes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
-            memcpy(ctu.m_refPartSize1, &intraDataCTU1->partSizes[ctu.m_cuAddr * numPartition], sizeof(char) * numPartition);
-            memcpy(ctu.m_refChromaDir1, &intraDataCTU1->chromaModes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
+            m_refIntraDepth1 = &intraDataCTU1->depth[ctu.m_cuAddr * numPartition];
+            m_refLumaDir1 = &intraDataCTU1->modes[ctu.m_cuAddr * numPartition];
+            m_refIntraPartSize1 = &intraDataCTU1->partSizes[ctu.m_cuAddr * numPartition];
+            m_refChromaDir1 = &intraDataCTU1->chromaModes[ctu.m_cuAddr * numPartition];
             if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
             {
                 x265_analysis_intra_data* intraDataCTU2 = (x265_analysis_intra_data*)m_frame->m_multirateDataIn2->intraData;
-                memcpy(ctu.m_refDepth2, &intraDataCTU2->depth[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
-                memcpy(ctu.m_refLumaDir2, &intraDataCTU2->modes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
-                memcpy(ctu.m_refPartSize2, &intraDataCTU2->partSizes[ctu.m_cuAddr * numPartition], sizeof(char) * numPartition);
-                memcpy(ctu.m_refChromaDir2, &intraDataCTU2->chromaModes[ctu.m_cuAddr * numPartition], sizeof(uint8_t) * numPartition);
+                m_refIntraDepth2 = &intraDataCTU2->depth[ctu.m_cuAddr * numPartition];
+                m_refLumaDir2 = &intraDataCTU2->modes[ctu.m_cuAddr * numPartition];
+                m_refIntraPartSize2 = &intraDataCTU2->partSizes[ctu.m_cuAddr * numPartition];
+                m_refChromaDir2 = &intraDataCTU2->chromaModes[ctu.m_cuAddr * numPartition];
             }
         }
     }
@@ -677,7 +665,7 @@ uint64_t Analysis::compressIntraCU(const CUData& parentCTU, const CUGeom& cuGeom
     // stop recursion based on MR reference depth
     if (m_param->mr_load & MULTIRATE_CU_TREE_LOWER_SINGLE_BOUND && (m_param->mr_load & MULTIRATE_DO_INTRA))
     {
-        uint8_t refDepth = parentCTU.m_refDepth1[cuGeom.absPartIdx];
+        uint8_t refDepth = m_refIntraDepth1[cuGeom.absPartIdx];
         if (depth >= refDepth) // if depth is 0, we have to split (cf. below)
         {
             mightSplit = false;
@@ -687,7 +675,7 @@ uint64_t Analysis::compressIntraCU(const CUData& parentCTU, const CUGeom& cuGeom
     }
     if (m_param->mr_load & MULTIRATE_CU_TREE_UPPER_SINGLE_BOUND && (m_param->mr_load & MULTIRATE_DO_INTRA))
     {
-        uint8_t refDepth = parentCTU.m_refDepth1[cuGeom.absPartIdx];
+        uint8_t refDepth = m_refIntraDepth1[cuGeom.absPartIdx];
         if (depth < refDepth)
         {
             mightSplit = true;
@@ -696,8 +684,8 @@ uint64_t Analysis::compressIntraCU(const CUData& parentCTU, const CUGeom& cuGeom
     }
     if (m_param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND && (m_param->mr_load & MULTIRATE_DO_INTRA))
     {
-        uint8_t maxPossibleDepth = X265_MAX(parentCTU.m_refDepth1[cuGeom.absPartIdx], parentCTU.m_refDepth2[cuGeom.absPartIdx]);
-        uint8_t minPossibleDepth = X265_MIN(parentCTU.m_refDepth1[cuGeom.absPartIdx], parentCTU.m_refDepth2[cuGeom.absPartIdx]);
+        uint8_t maxPossibleDepth = X265_MAX(m_refIntraDepth1[cuGeom.absPartIdx], m_refIntraDepth2[cuGeom.absPartIdx]);
+        uint8_t minPossibleDepth = X265_MIN(m_refIntraDepth1[cuGeom.absPartIdx], m_refIntraDepth2[cuGeom.absPartIdx]);
         if (depth >= maxPossibleDepth)
         {
             mightSplit = false;

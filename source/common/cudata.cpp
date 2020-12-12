@@ -212,17 +212,6 @@ void CUData::initialize(const CUDataMemPool& dataPool, uint32_t depth, const x26
         m_transformSkip[0]   = charBuf; charBuf += m_numPartitions;
         m_cbf[0]             = charBuf; charBuf += m_numPartitions;
         m_chromaIntraDir     = charBuf; charBuf += m_numPartitions;
-
-        /* multi-rate */
-        m_refDepth1          = charBuf; charBuf += m_numPartitions;
-        m_refDepth2          = charBuf; charBuf += m_numPartitions;
-        m_refLumaDir1        = charBuf; charBuf += m_numPartitions;
-        m_refLumaDir2        = charBuf; charBuf += m_numPartitions;
-        m_refPartSize1       = charBuf; charBuf += m_numPartitions;
-        m_refPartSize2       = charBuf; charBuf += m_numPartitions;
-        m_refChromaDir1      = charBuf; charBuf += m_numPartitions;
-        m_refChromaDir2      = charBuf; charBuf += m_numPartitions;
-
         X265_CHECK(charBuf == dataPool.charMemBlock + (m_numPartitions * (BytesPerPartition - 4)) * (instance + 1), "CU data layout is broken\n"); //BytesPerPartition
 
         m_mv[0]  = dataPool.mvMemBlock + (instance * 4) * m_numPartitions;
@@ -267,17 +256,6 @@ void CUData::initialize(const CUDataMemPool& dataPool, uint32_t depth, const x26
         m_cbf[1]             = charBuf; charBuf += m_numPartitions;
         m_cbf[2]             = charBuf; charBuf += m_numPartitions;
         m_chromaIntraDir     = charBuf; charBuf += m_numPartitions;
-
-        /* multi-rate */
-        m_refDepth1          = charBuf; charBuf += m_numPartitions;
-        m_refDepth2          = charBuf; charBuf += m_numPartitions;
-        m_refLumaDir1        = charBuf; charBuf += m_numPartitions;
-        m_refLumaDir2        = charBuf; charBuf += m_numPartitions;
-        m_refPartSize1       = charBuf; charBuf += m_numPartitions;
-        m_refPartSize2       = charBuf; charBuf += m_numPartitions;
-        m_refChromaDir1      = charBuf; charBuf += m_numPartitions;
-        m_refChromaDir2      = charBuf; charBuf += m_numPartitions;
-
         X265_CHECK(charBuf == dataPool.charMemBlock + (m_numPartitions * BytesPerPartition) * (instance + 1), "CU data layout is broken\n");
 
         m_mv[0]  = dataPool.mvMemBlock + (instance * 4) * m_numPartitions;

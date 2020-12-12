@@ -140,9 +140,11 @@ protected:
     uint8_t*                m_additionalCtuInfo;
     int*                    m_prevCtuInfoChange;
 
-    /* Multi-rate */
+    /*== Proposed multi-encoding ==*/
     x265_analysis_inter_data*    m_reuseInterDataCTU1;
     x265_analysis_inter_data*    m_reuseInterDataCTU2;
+    x265_analysis_intra_data*    m_reuseIntraDataCTU1;
+    x265_analysis_intra_data*    m_reuseIntraDataCTU2;
     uint8_t*                     m_reuseDepth1;
     uint8_t*                     m_reuseDepth2;
     uint8_t*                     m_reuseModes1;
@@ -151,6 +153,15 @@ protected:
     uint8_t*                     m_reusePartSize2;
     uint8_t*                     m_reuseMergeFlag1;
     uint8_t*                     m_reuseMergeFlag2;
+
+    uint8_t*                     m_refIntraDepth1;
+    uint8_t*                     m_refLumaDir1;
+    char*                        m_refIntraPartSize1;
+    uint8_t*                     m_refChromaDir1;
+    uint8_t*                     m_refIntraDepth2;
+    uint8_t*                     m_refLumaDir2;
+    char*                        m_refIntraPartSize2;
+    uint8_t*                     m_refChromaDir2;
 
     struct TrainingData
     {

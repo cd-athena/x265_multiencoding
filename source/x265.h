@@ -207,7 +207,7 @@ typedef struct x265_analysis_distortion_data
 #define EDGE_BINS 2
 #define MAX_HIST_BINS 1024
 
-/* Multi-rate */
+/*== Proposed multi-encoding ==*/
 typedef enum
 {
     MULTIRATE_DO_INTRA = 1,
