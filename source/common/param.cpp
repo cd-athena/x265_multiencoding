@@ -1947,18 +1947,22 @@ void x265_print_params(x265_param* param)
             param->rc.vbvBufferSize, param->rc.vbvMaxBitrate, param->rc.vbvBufferInit);
     }
 
-    /* Multi-rate */
+    /*== Proposed multi-encoding ==*/
     if (param->mr_save || param->mr_load)
     {
-        x265_log(param, X265_LOG_INFO, "Multi-rate: Save mode: %d, Load mode: %d\n",
+        x265_log(param, X265_LOG_INFO, "Multi-encoding: Save mode: %d, Load mode: %d\n",
             param->mr_save, param->mr_load);
+        if (param->scaleFactor1)
+            x265_log(param, X265_LOG_INFO, "Multi-encoding: Scale-factor1: %d\n", param->scaleFactor1);
+        if (param->scaleFactor2)
+            x265_log(param, X265_LOG_INFO, "Multi-encoding: Scale-factor2: %d\n", param->scaleFactor2);
         if (param->mr_save)
-            x265_log(param, X265_LOG_INFO, "Multi-rate: Save file: %s\n", param->mr_save_filename);
+            x265_log(param, X265_LOG_INFO, "Multi-encoding: Save file: %s\n", param->mr_save_filename);
         if (param->mr_load)
         {
-            x265_log(param, X265_LOG_INFO, "Multi-rate: Load file1: %s\n", param->mr_load_filename1);
+            x265_log(param, X265_LOG_INFO, "Multi-encoding: Load file1: %s\n", param->mr_load_filename1);
             if (param->mr_load & MULTIRATE_RESTRICT_CU_TREE_DOUBLE_BOUND)
-                x265_log(param, X265_LOG_INFO, "Multi-rate: Load file2: %s\n", param->mr_load_filename2);
+                x265_log(param, X265_LOG_INFO, "Multi-encoding: Load file2: %s\n", param->mr_load_filename2);
         }
     }
 
