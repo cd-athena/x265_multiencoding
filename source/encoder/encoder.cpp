@@ -6212,8 +6212,9 @@ void Encoder::writeMultiRateFile(x265_analysis_data* analysis, FrameData &curEnc
     analysis->frameRecordSize += sizeof(analysis->numCuInHeight) + sizeof(x265_lookahead_data);
     if (m_rateControl->m_isVbv)
     {
-        analysis->frameRecordSize += (2 * sizeof(uint32_t) * analysis->numCUsInFrame) + (2 * sizeof(uint32_t) * analysis->numCuInHeight) +
-            (sizeof(int64_t) * analysis->numCUsInFrame);
+        analysis->frameRecordSize += (2 * sizeof(uint32_t) * analysis->numCUsInFrame) 
+                                  + (2 * sizeof(uint32_t) * analysis->numCuInHeight) +
+                                    (sizeof(int64_t) * vbvCount);
     }
     if (analysis->sliceType > X265_TYPE_I)
     {
