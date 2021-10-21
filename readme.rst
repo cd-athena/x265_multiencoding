@@ -40,7 +40,7 @@ downloading and building the source. x265 is free to use under the `GNU GPL
 
 | 540p encodings 
 
-./x265 --input in_540p.y4m --crf 24 --mr-save 1 --mr-savefile test1.dat -o test1.hevc
+## ./x265 --input in_540p.y4m --crf 24 --mr-save 1 --mr-savefile test1.dat -o test1.hevc
 
 ./x265 --input in_540p.y4m --crf 34 --mr-load 50 --mr-loadfile1 test1.dat --mr-save 1 --mr-savefile test2.dat -o test1.hevc
 
